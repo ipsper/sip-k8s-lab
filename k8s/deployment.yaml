@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kamailio
+  namespace: kamailio
+  labels:
+    app: kamailio
+    component: sip-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kamailio
+  template:
+    metadata:
+      labels:
+        app: kamailio
+        component: sip-proxy
+    spec:
+      containers:
+      - name: kamailio
+        image: local/kamailio:v3
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5060
+          name: sip-udp
+          protocol: UDP
+        - containerPort: 5060
+          name: sip-tcp
+          protocol: TCP
+        - containerPort: 5061
+          name: sip-tls
+          protocol: TCP
+        env:
+        - name: KAMAILIO_CFG
+          value: "/etc/kamailio/kamailio.cfg"
+        volumeMounts:
+        - name: kamailio-config
+          mountPath: /etc/kamailio
+          readOnly: true
+        - name: kamailio-logs
+          mountPath: /var/log/kamailio
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          tcpSocket:
+            port: 5060
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 5060
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: kamailio-config
+        configMap:
+          name: kamailio-config
+      - name: kamailio-logs
+        emptyDir: {} 
