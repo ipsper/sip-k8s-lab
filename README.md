@@ -121,6 +121,21 @@ För att se services och deras endpoints:
 kubectl get svc -n kamailio
 ```
 
+### Testing med SIPp
+
+För att testa Kamailio-servern med SIPp:
+
+```bash
+# Bygg och kör SIPp-tester
+cd sipp-tester
+./scripts/build-and-test.sh
+
+# Eller kör tester manuellt
+docker run --rm local/sipp-tester:latest /app/test-scripts/run-tests.sh
+```
+
+Se `sipp-tester/README.md` för detaljerad information om tester.
+
 ### Loggar
 
 För att se loggar:
@@ -212,6 +227,12 @@ sip-k8s-lab/
 ├── scripts/
 │   ├── deploy.sh               # Deployment-script
 │   └── cleanup.sh              # Cleanup-script
+├── sipp-tester/                # SIPp test-bibliotek
+│   ├── Dockerfile              # SIPp test-container
+│   ├── test-scripts/           # Test-scripts
+│   ├── sipp-scenarios/         # SIPp test-scenarios
+│   ├── k8s/                    # Kubernetes-manifester för tester
+│   └── README.md               # Test-dokumentation
 └── README.md                   # Dokumentation
 
 🚀 Funktioner
