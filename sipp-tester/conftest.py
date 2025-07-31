@@ -22,14 +22,14 @@ def pytest_addoption(parser):
     parser.addoption(
         "--kamailio-host",
         action="store",
-        default="localhost",
-        help="Kamailio host för tester"
+        default=None,
+        help="Kamailio host för tester (override KAMAILIO_HOST env var)"
     )
     parser.addoption(
         "--kamailio-port",
         action="store",
-        default="5060",
-        help="Kamailio port för tester"
+        default=None,
+        help="Kamailio port för tester (override KAMAILIO_PORT env var)"
     )
     parser.addoption(
         "--run-with-kamailio",
@@ -41,18 +41,43 @@ def pytest_addoption(parser):
         action="store_true",
         help="Bygg Docker-image innan tester"
     )
+    parser.addoption(
+        "--environment",
+        action="store",
+        default=None,
+        choices=["local", "prod", "auto"],
+        help="Miljö för tester: local (Kind), prod (hårdvaru), auto (auto-detektering) (override KAMAILIO_ENVIRONMENT env var)"
+    )
 
 
 @pytest.fixture(scope="session")
 def kamailio_host(request):
     """Fixture för Kamailio host"""
-    return request.config.getoption("--kamailio-host")
+    import os
+    # Prioritera kommandoradsargument, sedan environment-variabel, sedan default
+    cmd_host = request.config.getoption("--kamailio-host")
+    env_host = os.getenv('KAMAILIO_HOST')
+    return cmd_host or env_host or "localhost"
 
 
 @pytest.fixture(scope="session")
 def kamailio_port(request):
     """Fixture för Kamailio port"""
-    return int(request.config.getoption("--kamailio-port"))
+    import os
+    # Prioritera kommandoradsargument, sedan environment-variabel, sedan default
+    cmd_port = request.config.getoption("--kamailio-port")
+    env_port = os.getenv('KAMAILIO_PORT')
+    return int(cmd_port or env_port or "5060")
+
+
+@pytest.fixture(scope="session")
+def environment(request):
+    """Fixture för miljö"""
+    import os
+    # Prioritera kommandoradsargument, sedan environment-variabel, sedan default
+    cmd_env = request.config.getoption("--environment")
+    env_env = os.getenv('KAMAILIO_ENVIRONMENT')
+    return cmd_env or env_env or "auto"
 
 
 @pytest.fixture(scope="session")

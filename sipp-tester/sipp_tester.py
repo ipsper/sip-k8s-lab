@@ -37,7 +37,8 @@ class SippTester:
                  kamailio_host: Optional[str] = None,
                  kamailio_port: int = 5060,
                  timeout: int = 30,
-                 docker_image: str = "local/sipp-tester:latest"):
+                 docker_image: str = "local/sipp-tester:latest",
+                 environment: str = "auto"):
         """
         Initiera SIPp-tester
         
@@ -46,14 +47,30 @@ class SippTester:
             kamailio_port: Kamailio-serverns port
             timeout: Timeout för tester i sekunder
             docker_image: Docker-image för SIPp-tester
+            environment: "local" för Kind, "prod" för hårdvaru, "auto" för auto-detektering
         """
-        self.kamailio_port = kamailio_port
+        # Kontrollera environment-variabler först
+        import os
+        env_host = os.getenv('KAMAILIO_HOST')
+        env_port = os.getenv('KAMAILIO_PORT')
+        env_environment = os.getenv('KAMAILIO_ENVIRONMENT')
+        
+        # Använd environment-variabler om de finns, annars parametrar
+        self.kamailio_port = int(env_port) if env_port else kamailio_port
         self.timeout = timeout
         self.docker_image = docker_image
+        self.environment = env_environment if env_environment else environment
         self.base_path = Path(__file__).parent
         
         # Auto-detektera Kamailio host
-        self.kamailio_host = kamailio_host or self._detect_kamailio_host()
+        detected_host = env_host or kamailio_host or self._detect_kamailio_host()
+        
+        # Om detected_host redan innehåller port, använd den som den är
+        if ":" in detected_host:
+            self.kamailio_host = detected_host
+            self.kamailio_port = int(detected_host.split(":")[-1])
+        else:
+            self.kamailio_host = detected_host
         
         # Miljövariabler för Docker
         self.env_vars = {
@@ -71,56 +88,88 @@ class SippTester:
         Returns:
             Bästa hostname/IP för Kamailio
         """
-        # Testa olika alternativ i prioritetsordning
         
-        # 1. Testa NodePort service (bästa för UDP)
+        # Använd environment-flaggan för att bestämma strategi
+        if self.environment == "local":
+            return self._detect_local_host()
+        elif self.environment == "prod":
+            return self._detect_prod_host()
+        else:  # "auto"
+            return self._detect_auto_host()
+    
+    def _detect_local_host(self) -> str:
+        """Detektera host för lokal Kind-miljö"""
         try:
-            # Hämta minikube IP
+            # Hämta Kind worker node IP
             result = subprocess.run(
-                ["minikube", "ip"],
+                ["kubectl", "get", "nodes", "sipp-k8s-lab-worker", "-o", "jsonpath={.status.addresses[?(@.type=='InternalIP')].address}"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
-            if result.returncode == 0:
-                minikube_ip = result.stdout.strip()
-                if self._test_connection(minikube_ip, 30600):  # NodePort UDP port
-                    logger.info(f"Använder NodePort service: {minikube_ip}:30600")
-                    return f"{minikube_ip}:30600"
+            if result.returncode == 0 and result.stdout.strip():
+                kind_ip = result.stdout.strip()
+                if self._test_connection(kind_ip, 30600):  # NodePort UDP port
+                    logger.info(f"Använder Kind NodePort service: {kind_ip}:30600")
+                    return f"{kind_ip}:30600"
         except Exception as e:
-            logger.debug(f"Kunde inte använda NodePort service: {e}")
+            logger.debug(f"Kunde inte använda Kind NodePort service: {e}")
         
-        # 2. Testa om vi kör i Kubernetes-kluster
-        if self._is_kubernetes_available():
-            try:
-                # Testa minikube IP med LoadBalancer port
-                minikube_ip = self._get_minikube_ip()
-                if minikube_ip and self._test_connection(minikube_ip, 32760):  # LoadBalancer port
-                    logger.info(f"Använder LoadBalancer service: {minikube_ip}:32760")
-                    return f"{minikube_ip}:32760"
-            except Exception as e:
-                logger.debug(f"Kunde inte använda LoadBalancer service: {e}")
+        # Fallback till localhost med NodePort
+        if self._test_connection("localhost", 30600):
+            logger.info("Använder localhost med NodePort")
+            return "localhost:30600"
         
-        # 3. Testa localhost med port-forward
-        if self._test_connection("localhost", self.kamailio_port):
-            logger.info("Använder localhost (port-forward)")
-            return "localhost"
+        # Fallback till localhost
+        logger.warning("Kunde inte ansluta till Kind NodePort, använder localhost")
+        return "localhost"
+    
+    def _detect_prod_host(self) -> str:
+        """Detektera host för produktionsmiljö"""
+        # I produktionsmiljö använder vi vanligtvis LoadBalancer eller direkt IP
+        try:
+            # Testa LoadBalancer service
+            result = subprocess.run(
+                ["kubectl", "get", "svc", "kamailio-service", "-n", "kamailio", "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                lb_ip = result.stdout.strip()
+                logger.info(f"Använder LoadBalancer IP: {lb_ip}")
+                return lb_ip
+        except Exception as e:
+            logger.debug(f"Kunde inte hämta LoadBalancer IP: {e}")
         
-        # 4. Testa host.docker.internal (för Docker containers)
+        # Fallback till standard SIP-port
+        logger.warning("Kunde inte hämta LoadBalancer IP, använder standard SIP-port")
+        return "kamailio-service.kamailio.svc.cluster.local"
+    
+    def _detect_auto_host(self) -> str:
+        """Auto-detektera bästa host baserat på miljö"""
+        # Testa olika alternativ i prioritetsordning
+        
+        # 1. Testa Kind NodePort service (bästa för UDP)
+        try:
+            kind_ip = self._get_kind_worker_ip()
+            if kind_ip and self._test_connection(kind_ip, 30600):
+                logger.info(f"Använder Kind NodePort service: {kind_ip}:30600")
+                return f"{kind_ip}:30600"
+        except Exception as e:
+            logger.debug(f"Kunde inte använda Kind NodePort service: {e}")
+        
+        # 2. Testa localhost med NodePort
+        if self._test_connection("localhost", 30600):
+            logger.info("Använder localhost med NodePort")
+            return "localhost:30600"
+        
+        # 3. Testa host.docker.internal (för Docker containers)
         if self._test_connection("host.docker.internal", self.kamailio_port):
             logger.info("Använder host.docker.internal")
             return "host.docker.internal"
         
-        # 5. Fallback till NodePort service
-        try:
-            minikube_ip = self._get_minikube_ip()
-            if minikube_ip:
-                logger.warning("Kunde inte testa anslutning, använder NodePort service som fallback")
-                return f"{minikube_ip}:30600"
-        except Exception:
-            pass
-        
-        # 6. Fallback till localhost
+        # 4. Fallback till localhost
         logger.warning("Kunde inte detektera Kamailio host, använder localhost")
         return "localhost"
     
@@ -137,16 +186,16 @@ class SippTester:
         except Exception:
             return False
     
-    def _get_minikube_ip(self) -> Optional[str]:
-        """Hämta minikube IP-adress"""
+    def _get_kind_worker_ip(self) -> Optional[str]:
+        """Hämta Kind worker node IP-adress"""
         try:
             result = subprocess.run(
-                ["minikube", "ip"],
+                ["kubectl", "get", "nodes", "sipp-k8s-lab-worker", "-o", "jsonpath={.status.addresses[?(@.type=='InternalIP')].address}"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
-            if result.returncode == 0:
+            if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
         except Exception:
             pass
@@ -155,9 +204,9 @@ class SippTester:
     def _test_connection(self, host: str, port: int) -> bool:
         """Testa anslutning till host:port"""
         try:
-            # Använd nc för att testa anslutning
+            # Använd nc för att testa anslutning (UDP för SIP)
             result = subprocess.run(
-                ["nc", "-z", host, str(port)],
+                ["nc", "-zu", host, str(port)],
                 capture_output=True,
                 text=True,
                 timeout=5

@@ -15,12 +15,13 @@ class TestSippTester:
     """Pytest-klass för SIPp-testing"""
     
     @pytest.fixture(scope="class")
-    def sipp_tester(self):
+    def sipp_tester(self, environment):
         """Fixture för SippTester-instans"""
         return SippTester(
             kamailio_host="localhost",
             kamailio_port=5060,
-            timeout=30
+            timeout=30,
+            environment=environment
         )
     
     @pytest.fixture(scope="class")
@@ -181,12 +182,13 @@ class TestSippTesterWithKamailio:
         process.wait()
     
     @pytest.fixture(scope="class")
-    def sipp_tester_with_kamailio(self, start_port_forward):
+    def sipp_tester_with_kamailio(self, start_port_forward, environment):
         """SippTester med Kamailio tillgänglig"""
         return SippTester(
             kamailio_host="localhost",
             kamailio_port=5060,
-            timeout=30
+            timeout=30,
+            environment=environment
         )
     
     def test_health_check_with_kamailio(self, sipp_tester_with_kamailio, ensure_kamailio_ready):

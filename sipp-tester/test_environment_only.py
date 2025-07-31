@@ -10,10 +10,44 @@ import time
 import json
 import os
 from typing import Dict, List, Optional
+from sipp_tester import SippTester
 
 
 class TestEnvironment:
     """Miljötester för att kontrollera och starta förutsättningar"""
+    
+    @pytest.fixture(scope="class")
+    def kamailio_config(self, request):
+        """Fixture för Kamailio-konfiguration baserad på environment-variabler"""
+        # Hämta kommandoradsargument
+        cmd_host = request.config.getoption("--kamailio-host")
+        cmd_port = request.config.getoption("--kamailio-port")
+        cmd_env = request.config.getoption("--environment")
+        
+        # Använd SippTester med kommandoradsargument om de finns
+        if cmd_host or cmd_port or cmd_env:
+            sipp_tester = SippTester(
+                kamailio_host=cmd_host,
+                kamailio_port=int(cmd_port) if cmd_port else 5060,
+                environment=cmd_env or "auto"
+            )
+        else:
+            # Använd SippTester för att få rätt konfiguration
+            sipp_tester = SippTester()
+        
+        # Om host redan innehåller port, använd den som den är
+        if ":" in sipp_tester.kamailio_host:
+            host = sipp_tester.kamailio_host
+            port = int(sipp_tester.kamailio_host.split(":")[-1])
+        else:
+            host = sipp_tester.kamailio_host
+            port = sipp_tester.kamailio_port
+        
+        return {
+            'host': host,
+            'port': port,
+            'environment': sipp_tester.environment
+        }
     
     def test_docker_available(self):
         """Testa att Docker är tillgängligt"""
@@ -311,42 +345,78 @@ class TestEnvironment:
         except Exception as e:
             pytest.fail(f"Kamailio service finns inte: {e}")
     
-    def test_kamailio_port_accessible(self):
-        """Testa att Kamailio port är tillgänglig via port-forward"""
+    def test_kamailio_port_accessible(self, kamailio_config):
+        """Testa att Kamailio port är tillgänglig"""
         try:
-            # Starta port-forward i bakgrunden
-            process = subprocess.Popen(
-                ["kubectl", "port-forward", "svc/kamailio-service", "5060:5060", "-n", "kamailio"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            host = kamailio_config['host']
+            port = kamailio_config['port']
+            environment = kamailio_config['environment']
             
-            # Vänta lite för att port-forward ska starta
-            time.sleep(3)
-            
-            # Testa anslutning
-            result = subprocess.run(
-                ["nc", "-z", "localhost", "5060"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
-            # Stoppa port-forward
-            process.terminate()
-            process.wait()
-            
-            if result.returncode == 0:
-                print(f"✅ Kamailio port tillgänglig via port-forward")
+            # Visa rätt host:port kombination
+            if ":" in host:
+                display_host = host
             else:
-                pytest.skip("Kamailio port inte tillgänglig via port-forward")
+                display_host = f"{host}:{port}"
+            print(f"🔍 Testar Kamailio på {display_host} (miljö: {environment})")
+            
+            # För local environment, testa direkt anslutning
+            if environment == "local":
+                # Använd direkt anslutning för Kind NodePort
+                host_ip = host
+                host_port = str(port)
+                
+                result = subprocess.run(
+                    ["nc", "-zu", host_ip, host_port],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if result.returncode == 0:
+                    print(f"✅ Kamailio port tillgänglig direkt: {host_ip}:{host_port}")
+                    return
+                else:
+                    pytest.skip(f"Kamailio port inte tillgänglig direkt: {host_ip}:{host_port}")
+            else:
+                # För andra miljöer, använd port-forward
+                process = subprocess.Popen(
+                    ["kubectl", "port-forward", "svc/kamailio-service", f"{port}:{port}", "-n", "kamailio"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                
+                # Vänta lite för att port-forward ska starta
+                time.sleep(3)
+                
+                # Testa anslutning
+                result = subprocess.run(
+                    ["nc", "-z", "localhost", str(port)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                # Stoppa port-forward
+                process.terminate()
+                process.wait()
+                
+                if result.returncode == 0:
+                    print(f"✅ Kamailio port tillgänglig via port-forward: localhost:{port}")
+                else:
+                    pytest.skip(f"Kamailio port inte tillgänglig via port-forward: localhost:{port}")
                        
         except Exception as e:
             pytest.fail(f"Kunde inte testa Kamailio port: {e}")
     
-    def test_kamailio_sip_readiness(self):
+    def test_kamailio_sip_readiness(self, kamailio_config):
         """Testa att Kamailio är redo för SIPp-tester"""
         try:
+            host = kamailio_config['host']
+            port = kamailio_config['port']
+            environment = kamailio_config['environment']
+            
+            print(f"🔍 Kontrollerar Kamailio readiness för {host}:{port} (miljö: {environment})")
+            
             # Kontrollera att Kamailio pods körs
             result = subprocess.run(
                 ["kubectl", "get", "pods", "-n", "kamailio", "-l", "app=kamailio", "--no-headers"],
