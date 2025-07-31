@@ -1,6 +1,39 @@
 # sip-k8s-lab
 En lab server för sip i k8s
 
+## 📚 Innehållsförteckning
+
+### 📖 Dokumentation
+- **[README-KIND.md](README-KIND.md)** - Detaljerad guide för Kind-installation och användning
+  - Kind vs Minikube jämförelse
+  - Steg-för-steg installation
+  - Nätverkskonfiguration
+  - Troubleshooting tips
+
+- **[sipp-tester/README.md](sipp-tester/README.md)** - Komplett guide för SIPp-testning och miljöhantering
+  - SIPp-testning setup
+  - Miljökontroller
+  - Docker image hantering
+  - Test-scenarios
+
+- **[felsökningar/README.md](felsökningar/README.md)** - Index över felsökningar och troubleshooting
+  - Struktur för felsökningar
+  - Mall för nya felsökningar
+  - Kommandon för att skapa nya felsökningar
+
+- **[felsökningar/2025-07-31/README.md](felsökningar/2025-07-31/README.md)** - Specifik felsökning för test_options_scenario timeout
+  - Problembeskrivning
+  - Rotorsaksanalys
+  - Lösning
+  - Lärdomar
+
+### 🛠️ Komponenter
+- **Kamailio SIP Proxy** - Huvudkomponenten för SIP-trafik
+- **MySQL Database** - För användarregistrering och autentisering
+- **Kubernetes Services** - För nätverkskommunikation
+- **Ingress** - För extern åtkomst
+- **Scripts** - Automatiserade deployment- och cleanup-script
+
 ## Kamailio SIP Server i Kubernetes
 
 Detta projekt innehåller en komplett Kamailio SIP server-konfiguration för Kubernetes.
