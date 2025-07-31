@@ -7,11 +7,11 @@ data:
   kamailio.cfg: |
     #!KAMAILIO
     # Kamailio SIP Server Configuration
-    # Basic configuration for SIP proxy
+    # Enhanced configuration for SIP testing
     
     ####### Global Parameters #########
     debug=2
-    log_stderror=no
+    log_stderror=yes
     log_facility=LOG_LOCAL0
     
     /* number of children processes to be created for handling requests */
@@ -27,49 +27,14 @@ data:
     /* core modules */
     loadmodule "tm.so"
     loadmodule "sl.so"
-    loadmodule "rr.so"
-    loadmodule "pv.so"
-    loadmodule "maxfwd.so"
-    loadmodule "textops.so"
-    loadmodule "siputils.so"
     loadmodule "xlog.so"
     
     /* routing logic */
     request_route {
-        # handle requests within SIP dialogs
-        if (has_totag()) {
-            # sequential request withing a dialog should
-            # take the path determined by record-routing
-            if (loose_route()) {
-                # route based on the preloaded route
-                route(RELAY);
-            } else {
-                # invalid request
-                sl_send_reply("404", "Not Found");
-            }
-            exit;
-        }
+        # Log all requests
+        xlog("L_INFO", "Received SIP request\n");
         
-        # CANCEL processing
-        if (is_method("CANCEL")) {
-            if (has_totag()) {
-                # CANCEL requests within a dialog
-                route(RELAY);
-            }
-            exit;
-        }
-        
-        # record routing for dialog forming requests
-        if (is_method("INVITE|SUBSCRIBE")) {
-            record_route();
-        }
-        
-        # handle other requests
-        route(RELAY);
-    }
-    
-    route[RELAY] {
-        if (!t_relay()) {
-            sl_reply_error();
-        }
+        # Send 200 OK for all requests
+        sl_send_reply("200", "OK");
+        exit;
     } 

@@ -5,22 +5,40 @@ metadata:
   namespace: kamailio
   labels:
     app: kamailio
-    component: sip-proxy
 spec:
   type: LoadBalancer
   ports:
-  - name: sip-udp
-    port: 5060
+  - port: 5060
     targetPort: 5060
     protocol: UDP
-  - name: sip-tcp
-    port: 5060
+    name: sip-udp
+  - port: 5060
     targetPort: 5060
     protocol: TCP
-  - name: sip-tls
-    port: 5061
-    targetPort: 5061
+    name: sip-tcp
+  selector:
+    app: kamailio
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kamailio-nodeport
+  namespace: kamailio
+  labels:
+    app: kamailio
+spec:
+  type: NodePort
+  ports:
+  - port: 5060
+    targetPort: 5060
+    nodePort: 30600
+    protocol: UDP
+    name: sip-udp
+  - port: 5060
+    targetPort: 5060
+    nodePort: 30601
     protocol: TCP
+    name: sip-tcp
   selector:
     app: kamailio
 ---
@@ -31,21 +49,16 @@ metadata:
   namespace: kamailio
   labels:
     app: kamailio
-    component: sip-proxy
 spec:
   type: ClusterIP
   ports:
-  - name: sip-udp
-    port: 5060
+  - port: 5060
     targetPort: 5060
     protocol: UDP
-  - name: sip-tcp
-    port: 5060
+    name: sip-udp
+  - port: 5060
     targetPort: 5060
     protocol: TCP
-  - name: sip-tls
-    port: 5061
-    targetPort: 5061
-    protocol: TCP
+    name: sip-tcp
   selector:
     app: kamailio 

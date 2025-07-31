@@ -15,7 +15,24 @@ Detta projekt innehåller en komplett Kamailio SIP server-konfiguration för Kub
 
 ### Installation
 
-#### Förberedelse
+#### Alternativ 1: Kind (Rekommenderat)
+
+Kind ger bättre nätverkshantering och stabilare port-forward än minikube.
+
+```bash
+# Installera Kind
+brew install kind
+
+# Skapa Kind-kluster
+./scripts/setup-kind.sh
+
+# Deploya Kamailio
+kubectl apply -f k8s/
+```
+
+Se [README-KIND.md](README-KIND.md) för detaljerad Kind-installation.
+
+#### Alternativ 2: Minikube
 
 1. **Kontrollera att du har minikube och Docker:**
 ```bash

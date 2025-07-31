@@ -19,8 +19,8 @@ spec:
     spec:
       containers:
       - name: kamailio
-        image: local/kamailio:v3
-        imagePullPolicy: Never
+        image: kamailio/kamailio-ci:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 5060
           name: sip-udp

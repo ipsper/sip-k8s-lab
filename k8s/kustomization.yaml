@@ -11,6 +11,41 @@ resources:
 - service.yaml
 - ingress.yaml
 
-commonLabels:
-  app: kamailio
-  project: sip-k8s-lab 
+# Lägg till labels endast på specifika resurser (inte MySQL)
+patches:
+- target:
+    kind: Deployment
+    name: kamailio
+  patch: |-
+    - op: add
+      path: /metadata/labels
+      value:
+        app: kamailio
+        project: sip-k8s-lab
+- target:
+    kind: Service
+    name: kamailio-service
+  patch: |-
+    - op: add
+      path: /metadata/labels
+      value:
+        app: kamailio
+        project: sip-k8s-lab
+- target:
+    kind: Service
+    name: kamailio-internal
+  patch: |-
+    - op: add
+      path: /metadata/labels
+      value:
+        app: kamailio
+        project: sip-k8s-lab
+- target:
+    kind: Ingress
+    name: kamailio-ingress
+  patch: |-
+    - op: add
+      path: /metadata/labels
+      value:
+        app: kamailio
+        project: sip-k8s-lab 
