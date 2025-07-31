@@ -115,7 +115,10 @@ def port_forward_process(request):
 def pytest_runtest_setup(item):
     """Setup för varje test"""
     # Hoppa över Kamailio-tester om flaggan inte är satt
-    if "kamailio" in item.name.lower() and not item.config.getoption("--run-with-kamailio"):
+    # Men tillåt miljökontroller att köras alltid
+    if ("kamailio" in item.name.lower() and 
+        "test_environment_only" not in item.module.__name__ and
+        not item.config.getoption("--run-with-kamailio")):
         pytest.skip("Kräver --run-with-kamailio flagga")
 
 

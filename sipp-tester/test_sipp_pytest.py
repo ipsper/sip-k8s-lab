@@ -221,6 +221,70 @@ class TestSippTesterWithKamailio:
                 pytest.skip("OPTIONS-test timeout - Kamailio svarar inte")
         
         assert result.success, f"OPTIONS-test misslyckades: {result.error}"
+    
+    def test_kamailio_sip_response(self, sipp_tester_with_kamailio, ensure_kamailio_ready):
+        """Testa att Kamailio svarar på SIP-requests"""
+        try:
+            # Hämta NodePort för Kamailio service
+            nodeport_result = subprocess.run(
+                ["kubectl", "get", "svc", "kamailio-nodeport", "-n", "kamailio", "-o", "jsonpath={.spec.ports[?(@.port==5060)].nodePort}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if nodeport_result.returncode != 0 or not nodeport_result.stdout.strip():
+                pytest.fail("Kunde inte hämta NodePort för Kamailio service")
+            
+            nodeport = nodeport_result.stdout.strip()
+            print(f"Använder NodePort: {nodeport}")
+            
+            # Hämta worker node IP
+            node_ip_result = subprocess.run(
+                ["kubectl", "get", "nodes", "sipp-k8s-lab-worker", "-o", "jsonpath={.status.addresses[?(@.type=='InternalIP')].address}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if node_ip_result.returncode != 0 or not node_ip_result.stdout.strip():
+                pytest.fail("Kunde inte hämta worker node IP")
+            
+            node_ip = node_ip_result.stdout.strip()
+            print(f"Använder worker node IP: {node_ip}")
+            
+            # Skicka en enkel SIP OPTIONS request
+            sip_request = (
+                "OPTIONS sip:kamailio.local SIP/2.0\r\n"
+                "Via: SIP/2.0/UDP 127.0.0.1:5061;branch=test\r\n"
+                "From: <sip:test@kamailio.local>;tag=123\r\n"
+                "To: <sip:kamailio.local>\r\n"
+                "Call-ID: test123\r\n"
+                "CSeq: 1 OPTIONS\r\n"
+                "Contact: <sip:test@127.0.0.1:5061>\r\n"
+                "User-Agent: Test Client\r\n"
+                "Content-Length: 0\r\n\r\n"
+            )
+            
+            # Skicka request och vänta på svar
+            result = subprocess.run(
+                ["nc", "-u", node_ip, nodeport],
+                input=sip_request,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            # Kontrollera om vi fick något svar
+            if result.stdout or result.stderr:
+                print(f"✅ Kamailio svarar på SIP-requests")
+            else:
+                print(f"⚠️  Kamailio port öppen men svarar inte på SIP-requests")
+                pytest.fail("Kamailio svarar inte på SIP-requests")
+                       
+        except Exception as e:
+            print(f"⚠️  Kamailio SIP-response test misslyckades: {e}")
+            pytest.fail(f"Kamailio svarar inte på SIP-requests via NodePort: {e}")
 
 
 # Hjälpfunktioner för pytest
