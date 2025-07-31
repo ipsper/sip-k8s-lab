@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+
+<scenario name="OPTIONS Test">
+  <!-- Skicka OPTIONS-request -->
+  <send>
+    <![CDATA[
+      OPTIONS sip:kamailio.local SIP/2.0
+      Via: SIP/2.0/UDP [local_ip]:[local_port];branch=[branch]
+      From: <sip:test@kamailio.local>;tag=[call_number]
+      To: <sip:kamailio.local>
+      Call-ID: [call_id]
+      CSeq: 1 OPTIONS
+      Contact: <sip:test@[local_ip]:[local_port]>
+      User-Agent: SIPp Test Client
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <!-- Vänta på 200 OK -->
+  <recv response="200" optional="true">
+  </recv>
+
+  <!-- Vänta på timeout om inget svar -->
+  <recv response="408" optional="true">
+  </recv>
+
+  <!-- Vänta på andra felkoder -->
+  <recv response="4XX" optional="true">
+  </recv>
+
+  <recv response="5XX" optional="true">
+  </recv>
+</scenario> 

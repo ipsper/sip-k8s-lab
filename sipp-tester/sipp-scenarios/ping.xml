@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+
+<scenario name="Ping Test">
+  <!-- Skicka en enkel MESSAGE-request som ping -->
+  <send>
+    <![CDATA[
+      MESSAGE sip:kamailio.local SIP/2.0
+      Via: SIP/2.0/UDP [local_ip]:[local_port];branch=[branch]
+      From: <sip:ping@kamailio.local>;tag=[call_number]
+      To: <sip:kamailio.local>
+      Call-ID: [call_id]
+      CSeq: 1 MESSAGE
+      Contact: <sip:ping@[local_ip]:[local_port]>
+      User-Agent: SIPp Ping Client
+      Content-Type: text/plain
+      Content-Length: 4
+
+      ping
+    ]]>
+  </send>
+
+  <!-- Vänta på 200 OK -->
+  <recv response="200" optional="true">
+  </recv>
+
+  <!-- Vänta på 202 Accepted -->
+  <recv response="202" optional="true">
+  </recv>
+
+  <!-- Vänta på timeout om inget svar -->
+  <recv response="408" optional="true">
+  </recv>
+
+  <!-- Vänta på andra felkoder -->
+  <recv response="4XX" optional="true">
+  </recv>
+
+  <recv response="5XX" optional="true">
+  </recv>
+</scenario> 

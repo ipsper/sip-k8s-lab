@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+
+<scenario name="INVITE Test">
+  <!-- Skicka INVITE-request -->
+  <send>
+    <![CDATA[
+      INVITE sip:test@kamailio.local SIP/2.0
+      Via: SIP/2.0/UDP [local_ip]:[local_port];branch=[branch]
+      From: <sip:caller@kamailio.local>;tag=[call_number]
+      To: <sip:test@kamailio.local>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:caller@[local_ip]:[local_port]>
+      User-Agent: SIPp Test Client
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=caller 2890844526 2890844526 IN IP4 [local_ip]
+      s=-
+      c=IN IP4 [local_ip]
+      t=0 0
+      m=audio 49170 RTP/AVP 0
+      a=rtpmap:0 PCMU/8000
+    ]]>
+  </send>
+
+  <!-- Vänta på 100 Trying -->
+  <recv response="100" optional="true">
+  </recv>
+
+  <!-- Vänta på 200 OK -->
+  <recv response="200" optional="true">
+  </recv>
+
+  <!-- Vänta på 404 Not Found (om användare inte finns) -->
+  <recv response="404" optional="true">
+  </recv>
+
+  <!-- Vänta på 401 Unauthorized (om autentisering krävs) -->
+  <recv response="401" optional="true">
+  </recv>
+
+  <!-- Vänta på timeout om inget svar -->
+  <recv response="408" optional="true">
+  </recv>
+
+  <!-- Vänta på andra felkoder -->
+  <recv response="4XX" optional="true">
+  </recv>
+
+  <recv response="5XX" optional="true">
+  </recv>
+</scenario> 
