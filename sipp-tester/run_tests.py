@@ -14,7 +14,7 @@ def main():
     print("=" * 40)
     
     # Kontrollera att vi är i rätt katalog
-    if not Path("sipp_tester.py").exists():
+    if not Path("../app/sipp_support.py").exists():
         print("❌ Kör detta script från sipp-tester-mappen")
         sys.exit(1)
     

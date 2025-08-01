@@ -9,7 +9,10 @@ import time
 import subprocess
 import sys
 from pathlib import Path
-from sipp_tester import SippTester, TestResult
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
+from sipp_support import SippTester, TestResult
 
 # Lägg till app directory för att importera utility-funktioner
 sys.path.append(str(Path(__file__).parent.parent / "app"))

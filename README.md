@@ -27,12 +27,29 @@ En lab server för sip i k8s
   - Lösning
   - Lärdomar
 
+### 📁 Projektstruktur
+```
+sip-k8s-lab/
+├── app/                    # Python support-bibliotek
+│   ├── sipp_support.py    # SIPp-testning utilities
+│   ├── sip_test_utils.py  # SIP-test utilities
+│   └── test_support.py    # Test support-funktioner
+├── sipp-tester/           # SIPp test-container och scripts
+│   ├── Dockerfile         # SIPp test-container
+│   ├── test-scripts/      # Shell-scripts för tester
+│   └── sipp-scenarios/    # SIPp XML-scenarios
+├── k8s/                   # Kubernetes manifests
+├── scripts/               # Deployment och cleanup scripts
+└── felsökningar/          # Felsökningsdokumentation
+```
+
 ### 🛠️ Komponenter
 - **Kamailio SIP Proxy** - Huvudkomponenten för SIP-trafik
 - **MySQL Database** - För användarregistrering och autentisering
 - **Kubernetes Services** - För nätverkskommunikation
 - **Ingress** - För extern åtkomst
 - **Scripts** - Automatiserade deployment- och cleanup-script
+- **App Support** - Python-utilities för SIP-testning (`app/sipp_support.py`)
 
 ## Kamailio SIP Server i Kubernetes
 

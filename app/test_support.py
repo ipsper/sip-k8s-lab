@@ -11,7 +11,7 @@ from typing import Dict, Any
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / "sipp-tester"))
-from sipp_tester import SippTester
+from sipp_support import SippTester
 from sip_test_utils import get_environment_status
 
 
