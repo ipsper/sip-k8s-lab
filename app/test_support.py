@@ -84,19 +84,45 @@ class SippTestSupport:
         """Kontrollera att Kamailio är redo"""
         env_status = get_environment_status()
         
+        print(f"🔍 Kamailio readiness check:")
+        for check, status in env_status.items():
+            print(f"  {check}: {status}")
+        
         # Kontrollera kritiska komponenter för Kamailio-tester
         critical_checks = ["docker", "kubernetes_cluster", "kamailio_namespace", "kamailio_deployment", "kamailio_pods", "kamailio_service"]
         missing_critical = [check for check in critical_checks if not env_status.get(check, False)]
         
         if missing_critical:
+            print(f"❌ Saknade kritiska komponenter: {', '.join(missing_critical)}")
             pytest.skip(f"Kritiska komponenter för Kamailio-tester saknas: {', '.join(missing_critical)}")
         
+        print(f"✅ Alla kritiska komponenter finns")
         return env_status
     
     @staticmethod
     def start_port_forward() -> subprocess.Popen:
         """Starta port-forward för Kamailio"""
         try:
+            # För Kind-kluster använder vi NodePort istället för port-forward
+            # Kontrollera om vi kör i Kind-kluster
+            result = subprocess.run(
+                ["kubectl", "get", "nodes", "-o", "jsonpath={.items[0].metadata.name}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0 and "sipp-k8s-lab" in result.stdout:
+                print("🔍 Kind-kluster detekterat, använder NodePort istället för port-forward")
+                # Returnera en dummy-process för Kind-kluster
+                class DummyProcess:
+                    def poll(self): return None
+                    def terminate(self): pass
+                    def wait(self): pass
+                return DummyProcess()
+            
+            # För andra kluster, använd port-forward
+            print("🔍 Använder port-forward för Kamailio")
             process = subprocess.Popen(
                 ["kubectl", "port-forward", "svc/kamailio-service", "5060:5060", "-n", "kamailio"],
                 stdout=subprocess.PIPE,

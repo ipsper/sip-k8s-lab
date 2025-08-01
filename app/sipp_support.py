@@ -65,12 +65,14 @@ class SippTester:
         # Auto-detektera Kamailio host
         detected_host = env_host or kamailio_host or self._detect_kamailio_host()
         
-        # Om detected_host redan innehåller port, använd den som den är
-        if ":" in detected_host:
-            self.kamailio_host = detected_host
-            self.kamailio_port = int(detected_host.split(":")[-1])
-        else:
-            self.kamailio_host = detected_host
+        # Använd central funktion för att hantera host och port
+        from sip_test_utils import parse_kamailio_address
+        
+        # Parsa host och port från detected_host
+        host_ip, host_port = parse_kamailio_address(detected_host, kamailio_port)
+        
+        self.kamailio_host = f"{host_ip}:{host_port}"
+        self.kamailio_port = int(host_port)
         
         # Miljövariabler för Docker
         self.env_vars = {
@@ -79,7 +81,7 @@ class SippTester:
             'TEST_TIMEOUT': str(self.timeout)
         }
         
-        logger.info(f"Använder Kamailio host: {self.kamailio_host}:{self.kamailio_port}")
+        logger.info(f"Använder Kamailio host: {self.kamailio_host}")
     
     def _detect_kamailio_host(self) -> str:
         """
@@ -115,14 +117,9 @@ class SippTester:
         except Exception as e:
             logger.debug(f"Kunde inte använda Kind NodePort service: {e}")
         
-        # Fallback till localhost med NodePort
-        if self._test_connection("localhost", 30600):
-            logger.info("Använder localhost med NodePort")
-            return "localhost:30600"
-        
-        # Fallback till localhost
-        logger.warning("Kunde inte ansluta till Kind NodePort, använder localhost")
-        return "localhost"
+        # Fallback till Kind worker node IP
+        logger.warning("Kunde inte ansluta till Kind NodePort, använder worker node IP")
+        return kind_ip
     
     def _detect_prod_host(self) -> str:
         """Detektera host för produktionsmiljö"""
@@ -276,7 +273,18 @@ class SippTester:
         logger.info(f"📍 Target: {kamailio_host}")
         
         # Testa anslutning med netcat
-        test_command = f"nc -z -w 5 {kamailio_host.replace(':', ' ')}"
+        from sip_test_utils import parse_kamailio_address
+        
+        # Använd bara kamailio_host eftersom den redan innehåller port
+        host_ip, host_port = parse_kamailio_address(kamailio_host, self.kamailio_port)
+        
+        # Använd den faktiska IP-adressen från KAMAILIO_HOST
+        
+        test_command = f"nc -z -w 5 {host_ip} {host_port}"
+        
+        logger.info(f"🔍 Testar anslutning till {host_ip}:{host_port}")
+        logger.info(f"🔍 Test command: {test_command}")
+        logger.info(f"🔍 Original host: {kamailio_host}")
         
         logger.info("🔍 Kontrollerar port-anslutning...")
         

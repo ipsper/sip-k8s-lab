@@ -416,6 +416,28 @@ def get_environment_status() -> Dict[str, bool]:
     except Exception:
         status["sipp_scenarios"] = False
     
+    # Lägg till Kamailio-specifika kontroller
+    try:
+        status["kamailio_namespace"] = KubernetesUtils.check_namespace_exists("kamailio")
+    except Exception:
+        status["kamailio_namespace"] = False
+    
+    try:
+        status["kamailio_deployment"] = KubernetesUtils.check_deployment_exists("kamailio", "kamailio")
+    except Exception:
+        status["kamailio_deployment"] = False
+    
+    try:
+        pods_running, _ = KubernetesUtils.check_pods_running("kamailio", "app=kamailio")
+        status["kamailio_pods"] = pods_running
+    except Exception:
+        status["kamailio_pods"] = False
+    
+    try:
+        status["kamailio_service"] = KubernetesUtils.check_service_exists("kamailio-service", "kamailio")
+    except Exception:
+        status["kamailio_service"] = False
+    
     return status
 
 
@@ -424,6 +446,126 @@ def is_environment_ready() -> bool:
     status = get_environment_status()
     required_checks = ["docker", "kubectl", "kubernetes_cluster"]
     return all(status.get(check, False) for check in required_checks)
+
+
+def parse_kamailio_address(host: str, port: int) -> tuple[str, int]:
+    """
+    Parsa Kamailio host och port
+    
+    Args:
+        host: Host (kan innehålla port)
+        port: Standard port
+        
+    Returns:
+        Tuple med (host_ip, port)
+    """
+    # Om host redan innehåller port, använd den
+    if ":" in host:
+        host_ip = host.split(":")[0]
+        host_port = int(host.split(":")[1])
+        return host_ip, host_port
+    else:
+        return host, port
+
+
+def format_kamailio_address(host: str, port: int) -> str:
+    """
+    Formatera Kamailio adress för visning
+    
+    Args:
+        host: Host (kan innehålla port)
+        port: Standard port
+        
+    Returns:
+        Formaterad adress (host:port)
+    """
+    host_ip, host_port = parse_kamailio_address(host, port)
+    return f"{host_ip}:{host_port}"
+
+
+def get_kamailio_connection_info(host: str, port: int) -> dict:
+    """
+    Hämta information för anslutning till Kamailio
+    
+    Args:
+        host: Host (kan innehålla port)
+        port: Standard port
+        
+    Returns:
+        Dict med connection info
+    """
+    host_ip, host_port = parse_kamailio_address(host, port)
+    
+    return {
+        'host': host_ip,
+        'port': host_port,
+        'address': f"{host_ip}:{host_port}",
+        'display': f"{host_ip}:{host_port}"
+    }
+
+
+def get_kamailio_config_from_environment() -> dict:
+    """
+    Hämta Kamailio-konfiguration från miljövariabler
+    
+    Returns:
+        Dict med host och port
+    """
+    import os
+    
+    # Standard-värden för olika miljöer
+    default_configs = {
+        "local": {"host": "localhost", "port": 30600},  # Kind NodePort
+        "prod": {"host": "kamailio-service", "port": 5060},  # Kubernetes service
+        "test": {"host": "localhost", "port": 5061},  # Test port
+    }
+    
+    # Hämta från miljövariabler
+    environment = os.getenv("KAMAILIO_ENVIRONMENT", "auto")
+    host = os.getenv("KAMAILIO_HOST")
+    port = os.getenv("KAMAILIO_PORT")
+    
+    # Om miljövariabler finns, använd dem
+    if host and port:
+        return {
+            "host": host,
+            "port": int(port),
+            "environment": environment
+        }
+    
+    # Annars använd standard för miljö
+    if environment in default_configs:
+        config = default_configs[environment].copy()
+        config["environment"] = environment
+        return config
+    
+    # Fallback till local
+    config = default_configs["local"].copy()
+    config["environment"] = environment
+    return config
+
+
+def create_kamailio_connection_string(host: str = None, port: int = None, environment: str = None) -> str:
+    """
+    Skapa Kamailio-anslutningssträng
+    
+    Args:
+        host: Host (optional, hämtas från miljö om None)
+        port: Port (optional, hämtas från miljö om None)
+        environment: Miljö (optional, hämtas från miljö om None)
+        
+    Returns:
+        Anslutningssträng (host:port)
+    """
+    if host is None or port is None or environment is None:
+        config = get_kamailio_config_from_environment()
+        host = host or config["host"]
+        port = port or config["port"]
+        environment = environment or config["environment"]
+    
+    # Använd den faktiska IP-adressen från KAMAILIO_HOST
+    
+    return f"{host}:{port}"
 
 
 if __name__ == "__main__":

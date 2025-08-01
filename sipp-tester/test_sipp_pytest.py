@@ -305,5 +305,12 @@ def kamailio_port(request):
 
 def pytest_runtest_setup(item):
     """Setup för varje test"""
+    print(f"🔍 Test setup för: {item.name}")
+    print(f"🔍 Test name innehåller 'kamailio': {'kamailio' in item.name.lower()}")
+    print(f"🔍 --run-with-kamailio flagga: {item.config.getoption('--run-with-kamailio')}")
+    
     if "kamailio" in item.name.lower() and not item.config.getoption("--run-with-kamailio"):
-        pytest.skip("Kräver --run-with-kamailio flagga") 
+        print(f"❌ Skippar test eftersom --run-with-kamailio flagga saknas")
+        pytest.skip("Kräver --run-with-kamailio flagga")
+    else:
+        print(f"✅ Test setup klar för: {item.name}") 

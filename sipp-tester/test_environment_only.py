@@ -207,28 +207,34 @@ class TestEnvironment:
             display_host = f"{host}:{port}"
         print(f"🔍 Testar Kamailio på {display_host} (miljö: {environment})")
         
-        # För local environment, testa direkt anslutning
-        if environment == "local":
+        # För local environment eller Kind-kluster, testa direkt anslutning
+        if environment == "local" or (environment == "auto" and "172.18." in host):
             # Använd direkt anslutning för Kind NodePort
-            host_ip = host
-            host_port = port
+            from sip_test_utils import parse_kamailio_address
+            host_ip, host_port = parse_kamailio_address(host, port)
             
+            print(f"🔍 Testar direkt UDP-anslutning till {host_ip}:{host_port}")
             if NetworkUtils.test_udp_connection(host_ip, host_port):
                 print(f"✅ Kamailio port tillgänglig direkt: {host_ip}:{host_port}")
                 return
             else:
+                print(f"❌ Kamailio port inte tillgänglig direkt: {host_ip}:{host_port}")
                 pytest.skip(f"Kamailio port inte tillgänglig direkt: {host_ip}:{host_port}")
         else:
             # För andra miljöer, använd port-forward
+            print(f"🔍 Testar port-forward till localhost:{port}")
             process = NetworkUtils.port_forward_service("kamailio-service", "kamailio", port, port)
             if process:
+                print(f"🔍 Port-forward startad, testar TCP-anslutning till localhost:{port}")
                 if NetworkUtils.test_tcp_connection("localhost", port):
                     print(f"✅ Kamailio port tillgänglig via port-forward: localhost:{port}")
                 else:
+                    print(f"❌ Kamailio port inte tillgänglig via port-forward: localhost:{port}")
                     pytest.skip(f"Kamailio port inte tillgänglig via port-forward: localhost:{port}")
                 process.terminate()
                 process.wait()
             else:
+                print(f"❌ Kunde inte starta port-forward")
                 pytest.skip("Kunde inte starta port-forward")
     
     def test_kamailio_sip_readiness(self, kamailio_config):
