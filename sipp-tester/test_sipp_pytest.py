@@ -7,8 +7,13 @@ Fokuserar på SIPp-funktionalitet, miljökontroller hanteras av test_environment
 import pytest
 import time
 import subprocess
+import sys
+from pathlib import Path
 from sipp_tester import SippTester, TestResult
-from test_environment_only import get_environment_status
+
+# Lägg till app directory för att importera utility-funktioner
+sys.path.append(str(Path(__file__).parent.parent / "app"))
+from test_support import SippTestSupport
 
 
 class TestSippTester:
@@ -17,26 +22,12 @@ class TestSippTester:
     @pytest.fixture(scope="class")
     def sipp_tester(self, environment):
         """Fixture för SippTester-instans"""
-        return SippTester(
-            kamailio_host="localhost",
-            kamailio_port=5060,
-            timeout=30,
-            environment=environment
-        )
+        return SippTestSupport.create_sipp_tester(environment)
     
     @pytest.fixture(scope="class")
     def ensure_environment_ready(self):
         """Fixture som säkerställer att miljön är redo för SIPp-tester"""
-        env_status = get_environment_status()
-        
-        # Kontrollera kritiska komponenter för SIPp-tester
-        critical_checks = ["docker", "sipp_image", "sipp_container", "sipp_installed", "sipp_scenarios"]
-        missing_critical = [check for check in critical_checks if not env_status.get(check, False)]
-        
-        if missing_critical:
-            pytest.skip(f"Kritiska komponenter för SIPp-tester saknas: {', '.join(missing_critical)}")
-        
-        return env_status
+        return SippTestSupport.ensure_environment_ready()
     
     def test_options_scenario(self, sipp_tester, ensure_environment_ready):
         """Testa OPTIONS-scenario"""
@@ -150,46 +141,17 @@ class TestSippTesterWithKamailio:
     @pytest.fixture(scope="class")
     def ensure_kamailio_ready(self):
         """Fixture som säkerställer att Kamailio är redo"""
-        env_status = get_environment_status()
-        
-        # Kontrollera att Kamailio är deployad och körs
-        kamailio_checks = ["kamailio_namespace", "kamailio_deployment", "kamailio_pods", "kamailio_service"]
-        missing_kamailio = [check for check in kamailio_checks if not env_status.get(check, False)]
-        
-        if missing_kamailio:
-            pytest.skip(f"Kamailio inte redo: {', '.join(missing_kamailio)}")
-        
-        return env_status
+        return SippTestSupport.ensure_kamailio_ready()
     
     @pytest.fixture(scope="class")
     def start_port_forward(self):
         """Starta port-forward till Kamailio"""
-        print("Startar port-forward till Kamailio...")
-        
-        # Starta port-forward i bakgrunden
-        process = subprocess.Popen([
-            'kubectl', 'port-forward', 'svc/kamailio-service', '5060:5060', '-n', 'kamailio'
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        
-        # Vänta lite för att port-forward ska starta
-        time.sleep(3)
-        
-        yield process
-        
-        # Stoppa port-forward
-        print("Stoppar port-forward...")
-        process.terminate()
-        process.wait()
+        return SippTestSupport.start_port_forward()
     
     @pytest.fixture(scope="class")
     def sipp_tester_with_kamailio(self, start_port_forward, environment):
         """SippTester med Kamailio tillgänglig"""
-        return SippTester(
-            kamailio_host="localhost",
-            kamailio_port=5060,
-            timeout=30,
-            environment=environment
-        )
+        return SippTestSupport.create_sipp_tester_with_kamailio(environment)
     
     def test_health_check_with_kamailio(self, sipp_tester_with_kamailio, ensure_kamailio_ready):
         """Testa health check när Kamailio är igång"""

@@ -385,6 +385,37 @@ def get_environment_status() -> Dict[str, bool]:
         except Exception:
             status[name] = False
     
+    # Lägg till Docker-specifika kontroller
+    try:
+        status["sipp_image"] = DockerUtils.check_image_exists("local/sipp-tester:latest")
+    except Exception:
+        status["sipp_image"] = False
+    
+    try:
+        success, _ = DockerUtils.run_container("local/sipp-tester:latest", "echo test")
+        status["sipp_container"] = success
+    except Exception:
+        status["sipp_container"] = False
+    
+    # Lägg till SIPp scenarios kontroll
+    try:
+        scenarios = ["options", "register", "invite", "ping"]
+        missing_scenarios = []
+        
+        for scenario in scenarios:
+            result = subprocess.run(
+                ["docker", "run", "--rm", "local/sipp-tester:latest", "test", "-f", f"/app/sipp-scenarios/{scenario}.xml"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode != 0:
+                missing_scenarios.append(scenario)
+        
+        status["sipp_scenarios"] = len(missing_scenarios) == 0
+    except Exception:
+        status["sipp_scenarios"] = False
+    
     return status
 
 

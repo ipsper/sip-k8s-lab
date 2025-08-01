@@ -7,6 +7,9 @@ Kontrollerar förutsättningar och startar/bygger det som behövs
 import pytest
 import sys
 import os
+import subprocess
+import json
+import time
 from pathlib import Path
 
 # Lägg till app directory för att importera sip_test_utils
@@ -16,7 +19,7 @@ from sip_test_utils import (
     KamailioConfig, KubernetesUtils, DockerUtils, NetworkUtils, 
     EnvironmentChecker, KamailioUtils, get_environment_status, is_environment_ready
 )
-from sipp_tester import SippTester
+from test_support import TestEnvironmentSupport
 
 
 class TestEnvironment:
@@ -25,35 +28,7 @@ class TestEnvironment:
     @pytest.fixture(scope="class")
     def kamailio_config(self, request):
         """Fixture för Kamailio-konfiguration baserad på environment-variabler"""
-        # Hämta kommandoradsargument
-        cmd_host = request.config.getoption("--kamailio-host")
-        cmd_port = request.config.getoption("--kamailio-port")
-        cmd_env = request.config.getoption("--environment")
-        
-        # Använd SippTester med kommandoradsargument om de finns
-        if cmd_host or cmd_port or cmd_env:
-            sipp_tester = SippTester(
-                kamailio_host=cmd_host,
-                kamailio_port=int(cmd_port) if cmd_port else 5060,
-                environment=cmd_env or "auto"
-            )
-        else:
-            # Använd SippTester för att få rätt konfiguration
-            sipp_tester = SippTester()
-        
-        # Om host redan innehåller port, använd den som den är
-        if ":" in sipp_tester.kamailio_host:
-            host = sipp_tester.kamailio_host
-            port = int(sipp_tester.kamailio_host.split(":")[-1])
-        else:
-            host = sipp_tester.kamailio_host
-            port = sipp_tester.kamailio_port
-        
-        return {
-            'host': host,
-            'port': port,
-            'environment': sipp_tester.environment
-        }
+        return TestEnvironmentSupport.get_kamailio_config(request)
     
     def test_docker_available(self):
         """Testa att Docker är tillgängligt"""
@@ -404,27 +379,30 @@ CMD ["/app/test-scripts/run-tests.sh"]
         print("MILJÖSAMMANFATTNING")
         print("="*60)
         
+        # Använd get_environment_status för att få en sammanfattning
+        env_status = get_environment_status()
+        
         # Kontrollera alla komponenter
         checks = [
-            ("Docker", self._check_docker),
-            ("kubectl", self._check_kubectl),
-            ("Kubernetes Cluster", self._check_kubernetes_cluster),
-            ("SIPp Test Image", self._check_sipp_image),
-            ("SIPp Test Container", self._check_sipp_container),
-            ("Kamailio Namespace", self._check_kamailio_namespace),
-            ("Kamailio Deployment", self._check_kamailio_deployment),
-            ("Kamailio Pods", self._check_kamailio_pods),
-            ("Kamailio Service", self._check_kamailio_service),
-            ("Kamailio SIP Response", self._check_kamailio_sip_response),
-            ("SIPp Installation", self._check_sipp_installed),
-            ("SIPp Scenarios", self._check_sipp_scenarios),
+            ("Docker", lambda: EnvironmentChecker.check_docker()),
+            ("kubectl", lambda: EnvironmentChecker.check_kubectl()),
+            ("Kubernetes Cluster", lambda: EnvironmentChecker.check_kubernetes_cluster()),
+            ("SIPp Test Image", lambda: DockerUtils.check_image_exists("local/sipp-tester:latest")),
+            ("SIPp Test Container", lambda: DockerUtils.run_container("local/sipp-tester:latest", "echo test")[0]),
+            ("Kamailio Namespace", lambda: KubernetesUtils.check_namespace_exists("kamailio")),
+            ("Kamailio Deployment", lambda: KubernetesUtils.check_deployment_exists("kamailio", "kamailio")),
+            ("Kamailio Pods", lambda: KubernetesUtils.check_pods_running("kamailio", "app=kamailio")),
+            ("Kamailio Service", lambda: KubernetesUtils.check_service_exists("kamailio-service", "kamailio")),
+            ("SIPp Installation", lambda: EnvironmentChecker.check_sipp_installed()),
         ]
         
         results = []
         for name, check_func in checks:
             try:
-                check_func()
-                results.append(f"✅ {name}")
+                if check_func():
+                    results.append(f"✅ {name}")
+                else:
+                    results.append(f"❌ {name}")
             except Exception as e:
                 results.append(f"❌ {name}: {str(e)}")
         
