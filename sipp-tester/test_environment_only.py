@@ -5,11 +5,17 @@ Kontrollerar förutsättningar och startar/bygger det som behövs
 """
 
 import pytest
-import subprocess
-import time
-import json
+import sys
 import os
-from typing import Dict, List, Optional
+from pathlib import Path
+
+# Lägg till app directory för att importera sip_test_utils
+sys.path.append(str(Path(__file__).parent.parent / "app"))
+
+from sip_test_utils import (
+    KamailioConfig, KubernetesUtils, DockerUtils, NetworkUtils, 
+    EnvironmentChecker, KamailioUtils, get_environment_status, is_environment_ready
+)
 from sipp_tester import SippTester
 
 
@@ -51,179 +57,54 @@ class TestEnvironment:
     
     def test_docker_available(self):
         """Testa att Docker är tillgängligt"""
-        try:
-            result = subprocess.run(
-                ["docker", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            assert result.returncode == 0, f"Docker inte tillgängligt: {result.stderr}"
-            print(f"✅ Docker tillgängligt: {result.stdout.strip()}")
-        except Exception as e:
-            pytest.fail(f"Docker inte tillgängligt: {e}")
+        if EnvironmentChecker.check_docker():
+            print("✅ Docker tillgängligt")
+        else:
+            pytest.fail("Docker inte tillgängligt")
     
     def test_kubectl_available(self):
         """Testa att kubectl är tillgängligt"""
-        try:
-            result = subprocess.run(
-                ["kubectl", "version", "--client"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            assert result.returncode == 0, f"kubectl inte tillgängligt: {result.stderr}"
-            print(f"✅ kubectl tillgängligt: {result.stdout.split()[0]}")
-        except Exception as e:
-            pytest.fail(f"kubectl inte tillgängligt: {e}")
+        if EnvironmentChecker.check_kubectl():
+            print("✅ kubectl tillgängligt")
+        else:
+            pytest.fail("kubectl inte tillgängligt")
     
     def test_kubernetes_cluster_available(self):
-        """Testa att Kubernetes-kluster är tillgängligt och starta om behövs"""
-        try:
-            # Testa först om klustret är tillgängligt
-            result = subprocess.run(
-                ["kubectl", "cluster-info"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode == 0:
-                print(f"✅ Kubernetes-kluster tillgängligt")
-                return
-            
-            # Om klustret inte är tillgängligt, försök starta minikube
-            print("⚠️  Kubernetes-kluster inte tillgängligt, försöker starta minikube...")
-            
-            # Kontrollera om minikube är installerat
-            minikube_result = subprocess.run(
-                ["minikube", "version"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if minikube_result.returncode != 0:
-                pytest.fail("minikube inte installerat. Installera minikube först.")
-            
-            # Starta minikube
-            print("🚀 Startar minikube...")
-            start_result = subprocess.run(
-                ["minikube", "start", "--driver=docker"],
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            
-            if start_result.returncode != 0:
-                pytest.fail(f"Kunde inte starta minikube: {start_result.stderr}")
-            
-            # Aktivera ingress addon
-            print("🔧 Aktiverar ingress addon...")
-            subprocess.run(
-                ["minikube", "addons", "enable", "ingress"],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            # Vänta lite och testa igen
-            time.sleep(10)
-            final_result = subprocess.run(
-                ["kubectl", "cluster-info"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if final_result.returncode == 0:
-                print(f"✅ Kubernetes-kluster startat och tillgängligt")
-            else:
-                pytest.fail(f"Kunde inte starta Kubernetes-kluster: {final_result.stderr}")
-                
-        except Exception as e:
-            pytest.fail(f"Kubernetes-kluster inte tillgängligt: {e}")
+        """Testa att Kubernetes-kluster är tillgängligt"""
+        if EnvironmentChecker.check_kubernetes_cluster():
+            print("✅ Kubernetes-kluster tillgängligt")
+        else:
+            pytest.fail("Kubernetes-kluster inte tillgängligt")
     
     def test_sipp_tester_image_exists(self):
         """Testa att SIPp test Docker-image finns och bygg om behövs"""
-        try:
-            result = subprocess.run(
-                ["docker", "images", "-q", "local/sipp-tester:latest"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode == 0 and result.stdout.strip() != "":
-                print(f"✅ SIPp test Docker-image finns")
-                return
-            
-            # Om image inte finns, bygg den
+        if DockerUtils.check_image_exists("local/sipp-tester:latest"):
+            print("✅ SIPp test Docker-image finns")
+        else:
             print("🔨 SIPp test Docker-image finns inte, bygger...")
-            
-            # Kontrollera att vi är i rätt katalog
-            if not os.path.exists("Dockerfile"):
-                pytest.fail("Dockerfile finns inte i nuvarande katalog")
-            
-            build_result = subprocess.run(
-                ["docker", "build", "-t", "local/sipp-tester:latest", "."],
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            
-            if build_result.returncode != 0:
-                pytest.fail(f"Kunde inte bygga SIPp test Docker-image: {build_result.stderr}")
-            
-            print(f"✅ SIPp test Docker-image byggd")
-            
-        except Exception as e:
-            pytest.fail(f"Kunde inte kontrollera/bygga SIPp test Docker-image: {e}")
+            if DockerUtils.build_image("local/sipp-tester:latest", "."):
+                print("✅ SIPp test Docker-image byggd")
+            else:
+                pytest.fail("Kunde inte bygga SIPp test Docker-image")
     
     def test_sipp_tester_container_starts(self):
         """Testa att SIPp test container kan startas"""
-        try:
-            result = subprocess.run(
-                ["docker", "run", "--rm", "local/sipp-tester:latest", "echo", "test"],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            assert result.returncode == 0, f"SIPp test container kan inte startas: {result.stderr}"
-            print(f"✅ SIPp test container kan startas")
-        except Exception as e:
-            pytest.fail(f"SIPp test container kan inte startas: {e}")
+        success, output = DockerUtils.run_container("local/sipp-tester:latest", "echo test")
+        if success:
+            print("✅ SIPp test container kan startas")
+        else:
+            pytest.fail(f"SIPp test container kan inte startas: {output}")
     
     def test_kamailio_namespace_exists(self):
         """Testa att kamailio namespace finns och skapa om behövs"""
-        try:
-            result = subprocess.run(
-                ["kubectl", "get", "namespace", "kamailio"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode == 0:
-                print(f"✅ kamailio namespace finns")
-                return
-            
-            # Om namespace inte finns, skapa den
+        if KubernetesUtils.check_namespace_exists("kamailio"):
+            print("✅ kamailio namespace finns")
+        else:
             print("📦 Skapar kamailio namespace...")
-            create_result = subprocess.run(
-                ["kubectl", "create", "namespace", "kamailio"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if create_result.returncode != 0:
-                pytest.fail(f"Kunde inte skapa kamailio namespace: {create_result.stderr}")
-            
-            print(f"✅ kamailio namespace skapat")
-            
-        except Exception as e:
-            pytest.fail(f"kamailio namespace finns inte: {e}")
+            if KubernetesUtils.create_namespace("kamailio"):
+                print("✅ kamailio namespace skapat")
+            else:
+                pytest.fail("Kunde inte skapa kamailio namespace")
     
     def test_kamailio_deployment_exists(self):
         """Testa att Kamailio deployment finns och deploya om behövs"""
@@ -333,138 +214,74 @@ class TestEnvironment:
     
     def test_kamailio_service_exists(self):
         """Testa att Kamailio service finns"""
-        try:
-            result = subprocess.run(
-                ["kubectl", "get", "service", "kamailio-service", "-n", "kamailio"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            assert result.returncode == 0, f"Kamailio service finns inte: {result.stderr}"
-            print(f"✅ Kamailio service finns")
-        except Exception as e:
-            pytest.fail(f"Kamailio service finns inte: {e}")
+        if KubernetesUtils.check_service_exists("kamailio-service", "kamailio"):
+            print("✅ Kamailio service finns")
+        else:
+            pytest.fail("Kamailio service finns inte")
     
     def test_kamailio_port_accessible(self, kamailio_config):
         """Testa att Kamailio port är tillgänglig"""
-        try:
-            host = kamailio_config['host']
-            port = kamailio_config['port']
-            environment = kamailio_config['environment']
+        host = kamailio_config['host']
+        port = kamailio_config['port']
+        environment = kamailio_config['environment']
+        
+        # Visa rätt host:port kombination
+        if ":" in host:
+            display_host = host
+        else:
+            display_host = f"{host}:{port}"
+        print(f"🔍 Testar Kamailio på {display_host} (miljö: {environment})")
+        
+        # För local environment, testa direkt anslutning
+        if environment == "local":
+            # Använd direkt anslutning för Kind NodePort
+            host_ip = host
+            host_port = port
             
-            # Visa rätt host:port kombination
-            if ":" in host:
-                display_host = host
+            if NetworkUtils.test_udp_connection(host_ip, host_port):
+                print(f"✅ Kamailio port tillgänglig direkt: {host_ip}:{host_port}")
+                return
             else:
-                display_host = f"{host}:{port}"
-            print(f"🔍 Testar Kamailio på {display_host} (miljö: {environment})")
-            
-            # För local environment, testa direkt anslutning
-            if environment == "local":
-                # Använd direkt anslutning för Kind NodePort
-                host_ip = host
-                host_port = str(port)
-                
-                result = subprocess.run(
-                    ["nc", "-zu", host_ip, host_port],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                
-                if result.returncode == 0:
-                    print(f"✅ Kamailio port tillgänglig direkt: {host_ip}:{host_port}")
-                    return
-                else:
-                    pytest.skip(f"Kamailio port inte tillgänglig direkt: {host_ip}:{host_port}")
-            else:
-                # För andra miljöer, använd port-forward
-                process = subprocess.Popen(
-                    ["kubectl", "port-forward", "svc/kamailio-service", f"{port}:{port}", "-n", "kamailio"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-                # Vänta lite för att port-forward ska starta
-                time.sleep(3)
-                
-                # Testa anslutning
-                result = subprocess.run(
-                    ["nc", "-z", "localhost", str(port)],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                
-                # Stoppa port-forward
-                process.terminate()
-                process.wait()
-                
-                if result.returncode == 0:
+                pytest.skip(f"Kamailio port inte tillgänglig direkt: {host_ip}:{host_port}")
+        else:
+            # För andra miljöer, använd port-forward
+            process = NetworkUtils.port_forward_service("kamailio-service", "kamailio", port, port)
+            if process:
+                if NetworkUtils.test_tcp_connection("localhost", port):
                     print(f"✅ Kamailio port tillgänglig via port-forward: localhost:{port}")
                 else:
                     pytest.skip(f"Kamailio port inte tillgänglig via port-forward: localhost:{port}")
-                       
-        except Exception as e:
-            pytest.fail(f"Kunde inte testa Kamailio port: {e}")
+                process.terminate()
+                process.wait()
+            else:
+                pytest.skip("Kunde inte starta port-forward")
     
     def test_kamailio_sip_readiness(self, kamailio_config):
         """Testa att Kamailio är redo för SIPp-tester"""
-        try:
-            host = kamailio_config['host']
-            port = kamailio_config['port']
-            environment = kamailio_config['environment']
-            
-            print(f"🔍 Kontrollerar Kamailio readiness för {host}:{port} (miljö: {environment})")
-            
-            # Kontrollera att Kamailio pods körs
-            result = subprocess.run(
-                ["kubectl", "get", "pods", "-n", "kamailio", "-l", "app=kamailio", "--no-headers"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode != 0:
-                print(f"⚠️  Kamailio pods körs inte")
-                pytest.skip("Kamailio inte redo för SIPp-tester")
-            
-            # Kontrollera att minst en pod är Running
-            lines = result.stdout.strip().split('\n')
-            running_pods = 0
-            
-            for line in lines:
-                if 'Running' in line:
-                    running_pods += 1
-            
-            if running_pods == 0:
-                print(f"⚠️  Inga Kamailio pods körs")
-                pytest.skip("Kamailio inte redo för SIPp-tester")
-            
-            # Kontrollera Kamailio-konfiguration
-            config_result = subprocess.run(
-                ["kubectl", "get", "configmap", "kamailio-config", "-n", "kamailio", "-o", "jsonpath={.data.kamailio\\.cfg}"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if config_result.returncode == 0 and config_result.stdout:
-                config = config_result.stdout
-                
-                # Kontrollera om konfigurationen är minimal (bara stateless proxy)
-                if "sl_send_reply" in config and "request_route" in config:
-                    print(f"✅ Kamailio konfigurerad för SIPp-tester")
-                else:
-                    print(f"⚠️  Kamailio har minimal konfiguration - SIPp-tester kan timeout")
-                    pytest.skip("Kamailio har minimal konfiguration")
+        host = kamailio_config['host']
+        port = kamailio_config['port']
+        environment = kamailio_config['environment']
+        
+        print(f"🔍 Kontrollerar Kamailio readiness för {host}:{port} (miljö: {environment})")
+        
+        # Kontrollera att Kamailio pods körs
+        pods_running, running_pods = KubernetesUtils.check_pods_running("kamailio", "app=kamailio")
+        if not pods_running:
+            print(f"⚠️  Kamailio pods körs inte")
+            pytest.skip("Kamailio inte redo för SIPp-tester")
+        
+        # Kontrollera Kamailio-konfiguration
+        config = KamailioUtils.get_kamailio_config()
+        if config:
+            # Kontrollera om konfigurationen är minimal (bara stateless proxy)
+            if "sl_send_reply" in config and "request_route" in config:
+                print(f"✅ Kamailio konfigurerad för SIPp-tester")
             else:
-                print(f"⚠️  Kunde inte läsa Kamailio-konfiguration")
-                pytest.skip("Kamailio-konfiguration inte tillgänglig")
-                       
-        except Exception as e:
-            print(f"⚠️  Kunde inte kontrollera Kamailio readiness: {e}")
-            pytest.skip("Kamailio readiness-kontroll misslyckades")
+                print(f"⚠️  Kamailio har minimal konfiguration - SIPp-tester kan timeout")
+                pytest.skip("Kamailio har minimal konfiguration")
+        else:
+            print(f"⚠️  Kunde inte läsa Kamailio-konfiguration")
+            pytest.skip("Kamailio-konfiguration inte tillgänglig")
     
     def test_sipp_installed_in_container(self):
         """Testa att SIPp är installerat i test-container och installera om behövs"""
@@ -626,120 +443,4 @@ CMD ["/app/test-scripts/run-tests.sh"]
             print(f"⚠️  {successful}/{total} miljökontroller lyckades")
             print("Fix the failed checks before running SIPp tests")
     
-    def _check_docker(self):
-        subprocess.run(["docker", "--version"], check=True, capture_output=True)
-    
-    def _check_kubectl(self):
-        subprocess.run(["kubectl", "version", "--client"], check=True, capture_output=True)
-    
-    def _check_kubernetes_cluster(self):
-        subprocess.run(["kubectl", "cluster-info"], check=True, capture_output=True)
-    
-    def _check_sipp_image(self):
-        result = subprocess.run(["docker", "images", "-q", "local/sipp-tester:latest"], 
-                              capture_output=True, text=True)
-        if result.returncode != 0 or not result.stdout.strip():
-            raise Exception("Image not found")
-    
-    def _check_sipp_container(self):
-        subprocess.run(["docker", "run", "--rm", "local/sipp-tester:latest", "echo", "test"], 
-                      check=True, capture_output=True)
-    
-    def _check_kamailio_namespace(self):
-        subprocess.run(["kubectl", "get", "namespace", "kamailio"], check=True, capture_output=True)
-    
-    def _check_kamailio_deployment(self):
-        subprocess.run(["kubectl", "get", "deployment", "kamailio", "-n", "kamailio"], 
-                      check=True, capture_output=True)
-    
-    def _check_kamailio_pods(self):
-        result = subprocess.run(["kubectl", "get", "pods", "-n", "kamailio", "-l", "app=kamailio", "-o", "json"],
-                              capture_output=True, text=True)
-        pods_data = json.loads(result.stdout)
-        pods = pods_data.get("items", [])
-        if not pods:
-            raise Exception("No pods found")
-        running = [p for p in pods if p.get("status", {}).get("phase") == "Running"]
-        if not running:
-            raise Exception("No running pods")
-    
-    def _check_kamailio_service(self):
-        subprocess.run(["kubectl", "get", "service", "kamailio-service", "-n", "kamailio"], 
-                      check=True, capture_output=True)
-    
-    def _check_kamailio_sip_response(self):
-        """Kontrollera att Kamailio är redo för SIPp-tester"""
-        # Kontrollera att Kamailio pods körs
-        result = subprocess.run(
-            ["kubectl", "get", "pods", "-n", "kamailio", "-l", "app=kamailio", "--no-headers"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        
-        if result.returncode != 0:
-            raise Exception("Kamailio pods not running")
-        
-        # Kontrollera att minst en pod är Running
-        lines = result.stdout.strip().split('\n')
-        running_pods = 0
-        
-        for line in lines:
-            if 'Running' in line:
-                running_pods += 1
-        
-        if running_pods == 0:
-            raise Exception("No Kamailio pods running")
-    
-    def _check_sipp_installed(self):
-        result = subprocess.run(["docker", "run", "--rm", "local/sipp-tester:latest", "which", "sipp"],
-                              capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Exception("SIPp not installed")
-    
-    def _check_sipp_scenarios(self):
-        scenarios = ["options", "register", "invite", "ping"]
-        for scenario in scenarios:
-            result = subprocess.run(["docker", "run", "--rm", "local/sipp-tester:latest", 
-                                  "test", "-f", f"/app/sipp-scenarios/{scenario}.xml"],
-                                 capture_output=True, text=True)
-            if result.returncode != 0:
-                raise Exception(f"Missing scenario: {scenario}")
-
-
-# Hjälpfunktioner för andra tester
-def get_environment_status() -> Dict[str, bool]:
-    """Hämta status för alla miljökontroller"""
-    env_tester = TestEnvironment()
-    status = {}
-    
-    checks = [
-        ("docker", env_tester._check_docker),
-        ("kubectl", env_tester._check_kubectl),
-        ("kubernetes_cluster", env_tester._check_kubernetes_cluster),
-        ("sipp_image", env_tester._check_sipp_image),
-        ("sipp_container", env_tester._check_sipp_container),
-        ("kamailio_namespace", env_tester._check_kamailio_namespace),
-        ("kamailio_deployment", env_tester._check_kamailio_deployment),
-        ("kamailio_pods", env_tester._check_kamailio_pods),
-        ("kamailio_service", env_tester._check_kamailio_service),
-        ("kamailio_sip_response", env_tester._check_kamailio_sip_response),
-        ("sipp_installed", env_tester._check_sipp_installed),
-        ("sipp_scenarios", env_tester._check_sipp_scenarios),
-    ]
-    
-    for name, check_func in checks:
-        try:
-            check_func()
-            status[name] = True
-        except Exception:
-            status[name] = False
-    
-    return status
-
-
-def is_environment_ready() -> bool:
-    """Kontrollera om miljön är redo för SIPp-tester"""
-    status = get_environment_status()
-    required_checks = ["docker", "kubectl", "kubernetes_cluster", "sipp_image", "sipp_container"]
-    return all(status.get(check, False) for check in required_checks) 
+# Använd utility-funktionerna från sip_test_utils istället för lokala funktioner 
