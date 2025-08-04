@@ -1,64 +1,18 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: kamailio-service
+  name: kamailio-loadbalancer
   namespace: kamailio
-  labels:
-    app: kamailio
 spec:
   type: LoadBalancer
-  ports:
-  - port: 5060
-    targetPort: 5060
-    protocol: UDP
-    name: sip-udp
-  - port: 5060
-    targetPort: 5060
-    protocol: TCP
-    name: sip-tcp
   selector:
     app: kamailio
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: kamailio-nodeport
-  namespace: kamailio
-  labels:
-    app: kamailio
-spec:
-  type: NodePort
   ports:
-  - port: 5060
-    targetPort: 5060
-    nodePort: 30600
-    protocol: UDP
-    name: sip-udp
-  - port: 5060
-    targetPort: 5060
-    nodePort: 30601
-    protocol: TCP
-    name: sip-tcp
-  selector:
-    app: kamailio
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: kamailio-internal
-  namespace: kamailio
-  labels:
-    app: kamailio
-spec:
-  type: ClusterIP
-  ports:
-  - port: 5060
-    targetPort: 5060
-    protocol: UDP
-    name: sip-udp
-  - port: 5060
-    targetPort: 5060
-    protocol: TCP
-    name: sip-tcp
-  selector:
-    app: kamailio 
+    - name: sip-udp
+      protocol: UDP
+      port: 5060
+      targetPort: 5060
+    - name: sip-tcp
+      protocol: TCP
+      port: 5060
+      targetPort: 5060 

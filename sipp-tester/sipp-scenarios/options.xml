@@ -26,9 +26,9 @@
   </recv>
 
   <!-- Vänta på andra felkoder -->
-  <recv response="4XX" optional="true">
+  <recv response="400" optional="true">
   </recv>
 
-  <recv response="5XX" optional="true">
+  <recv response="500" optional="true">
   </recv>
 </scenario> 

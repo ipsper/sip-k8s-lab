@@ -156,19 +156,9 @@ class SippTester:
         except Exception as e:
             logger.debug(f"Kunde inte använda Kind NodePort service: {e}")
         
-        # 2. Testa localhost med NodePort
-        if self._test_connection("localhost", 30600):
-            logger.info("Använder localhost med NodePort")
-            return "localhost:30600"
-        
-        # 3. Testa host.docker.internal (för Docker containers)
-        if self._test_connection("host.docker.internal", self.kamailio_port):
-            logger.info("Använder host.docker.internal")
-            return "host.docker.internal"
-        
-        # 4. Fallback till localhost
-        logger.warning("Kunde inte detektera Kamailio host, använder localhost")
-        return "localhost"
+        # 2. Fallback till Kind worker node IP
+        logger.warning("Kunde inte detektera Kamailio host, använder Kind worker node IP")
+        return kind_ip
     
     def _is_kubernetes_available(self) -> bool:
         """Kontrollera om Kubernetes är tillgängligt"""
@@ -217,7 +207,7 @@ class SippTester:
         try:
             # Bestäm nätverksargument baserat på host
             network_args = []
-            if self.kamailio_host == "localhost":
+            if "172.18." in self.kamailio_host:
                 network_args = ["--network=host"]
             
             # Kör Docker-kommando
@@ -348,26 +338,50 @@ class SippTester:
         # Bestäm Kamailio host
         kamailio_host = self._detect_kamailio_host()
         
-        # SIPp-kommando med lokal port 5061 för att undvika konflikter
-        sipp_command = f"sipp -sf /app/sipp-scenarios/{scenario}.xml {kamailio_host} -p 5062 -d 1000 -m 1 -r 1"
+        # SIPp-kommando med lokal port 5064 för att undvika konflikter
+        sipp_command = f"sipp -sf /app/sipp-scenarios/{scenario}.xml {kamailio_host} -p 5064 -d 1000 -m 1 -r 1"
         
         logger.info(f"Kör SIPp-test: {scenario}")
         logger.info(f"Target: {kamailio_host}")
         logger.info(f"Command: {sipp_command}")
         
         try:
-            # Bestäm nätverksargument baserat på host
-            network_args = []
-            if kamailio_host == "localhost":
-                network_args = ["--network=host"]
-            
-            # Kör SIPp i Docker
-            result = subprocess.run([
-                "docker", "run", "--rm"
-            ] + network_args + [
-                self.docker_image,
-                "bash", "-c", sipp_command
-            ], capture_output=True, text=True, timeout=30)
+            # Försök köra SIPp från host först (för Kind-kluster)
+            if "172.18." in kamailio_host:
+                logger.info("Försöker köra SIPp från host för Kind-kluster")
+                host_sipp_command = f"sipp -sf {self.base_path}/../sipp-tester/sipp-scenarios/{scenario}.xml {kamailio_host} -p 5064 -d 1000 -m 1 -r 1"
+                
+                try:
+                    result = subprocess.run(
+                        host_sipp_command.split(),
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if result.returncode == 0:
+                        logger.info("SIPp kördes framgångsrikt från host")
+                    else:
+                        logger.warning("SIPp från host misslyckades, försöker Docker")
+                        raise Exception("Host SIPp failed")
+                except Exception as e:
+                    logger.info(f"Kör SIPp från Docker: {e}")
+                    # Fallback till Docker
+                    network_args = ["--network=host"]
+                    result = subprocess.run([
+                        "docker", "run", "--rm"
+                    ] + network_args + [
+                        self.docker_image,
+                        "bash", "-c", sipp_command
+                    ], capture_output=True, text=True, timeout=30)
+            else:
+                # För andra miljöer, använd Docker
+                network_args = []
+                result = subprocess.run([
+                    "docker", "run", "--rm"
+                ] + network_args + [
+                    self.docker_image,
+                    "bash", "-c", sipp_command
+                ], capture_output=True, text=True, timeout=30)
             
             duration = time.time() - start_time
             

@@ -57,7 +57,7 @@ def kamailio_host(request):
     # Prioritera kommandoradsargument, sedan environment-variabel, sedan default
     cmd_host = request.config.getoption("--kamailio-host")
     env_host = os.getenv('KAMAILIO_HOST')
-    return cmd_host or env_host or "localhost"
+    return cmd_host or env_host or "172.18.0.2"
 
 
 @pytest.fixture(scope="session")

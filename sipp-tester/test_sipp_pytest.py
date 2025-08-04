@@ -275,7 +275,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--kamailio-host",
         action="store",
-        default="localhost",
+        default="172.18.0.2",
         help="Kamailio host för tester"
     )
     parser.addoption(

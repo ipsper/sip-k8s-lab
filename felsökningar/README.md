@@ -7,13 +7,21 @@ Detta bibliotek innehåller dokumentation av felsökningar för SIPp K8s Lab pro
 ```
 felsökningar/
 ├── README.md                    # Denna fil
-├── 2025-07-31/                 # Dagens felsökning
+├── 2025-07-31/                 # Felsökning från 31 juli
 │   └── README.md               # test_options_scenario timeout
+├── 2025-08-04/                 # Felsökning från 4 augusti
+│   └── README.md               # Nätverksrouting mellan Docker och K8s
 └── [datum]/                    # Framtida felsökningar
     └── README.md
 ```
 
 ## Felsökningar
+
+### 2025-08-04 - Nätverksrouting mellan Docker och Kubernetes
+**Problem:** SIPp kunde inte nå Kamailio på grund av nätverksrouting-problem  
+**Status:** ✅ Löst - MetalLB LoadBalancer implementerad  
+**Lösning:** LoadBalancer med extern IP för Docker-till-K8s kommunikation  
+**Läs mer:** [2025-08-04/README.md](2025-08-04/README.md)
 
 ### 2025-07-31 - test_options_scenario timeout
 **Problem:** SIPp-testet fick timeout och misslyckades  

@@ -71,6 +71,31 @@ Standard som automatiskt väljer bästa miljö:
 python -m pytest test_sipp_pytest.py -v -s --run-with-kamailio --environment=auto
 ```
 
+## Nätverksarkitektur
+
+### LoadBalancer-stöd (Kind-kluster)
+För Kind-kluster används MetalLB för att tillhandahålla LoadBalancer-funktionalitet:
+
+```bash
+# Kontrollera MetalLB-installation
+python -m pytest test_environment_only.py::TestEnvironment::test_metallb_installed -v -s
+
+# Kontrollera LoadBalancer-konfiguration
+python -m pytest test_environment_only.py::TestEnvironment::test_metallb_config_exists -v -s
+
+# Testa LoadBalancer-anslutning
+python -m pytest test_environment_only.py::TestEnvironment::test_loadbalancer_connectivity -v -s
+```
+
+### Nätverksrouting
+```
+SIPp (Docker) 172.18.0.2
+    ↓ (via LoadBalancer)
+LoadBalancer 172.18.0.242:5060
+    ↓ (K8s routing)
+Kamailio (K8s) 10.244.2.15:5060
+```
+
 ## Exempel
 
 ### Environment-variabler
@@ -147,12 +172,37 @@ python -m pytest test_sipp_pytest.py -v -s --run-with-kamailio --kamailio-host="
 - **Tertiary:** host.docker.internal
 - **Final:** localhost
 
+## Miljötester
+
+### Grundläggande miljökontroller
+```bash
+# Kör alla miljökontroller
+python -m pytest test_environment_only.py -v -s
+```
+
+### Specifika kontroller
+```bash
+# Docker och Kubernetes
+python -m pytest test_environment_only.py::TestEnvironment::test_docker_available -v -s
+python -m pytest test_environment_only.py::TestEnvironment::test_kubernetes_cluster_available -v -s
+
+# SIPp och Kamailio
+python -m pytest test_environment_only.py::TestEnvironment::test_sipp_tester_image_exists -v -s
+python -m pytest test_environment_only.py::TestEnvironment::test_kamailio_pods_running -v -s
+
+# Nätverksrouting (LoadBalancer)
+python -m pytest test_environment_only.py::TestEnvironment::test_metallb_installed -v -s
+python -m pytest test_environment_only.py::TestEnvironment::test_loadbalancer_connectivity -v -s
+```
+
 ## Fördelar
 
 1. **Enkel konfiguration** - En flagga för hela miljön
 2. **Automatisk detektering** - Väljer rätt host automatiskt
 3. **Flexibilitet** - Fungerar i olika miljöer
 4. **Tydlighet** - Vet exakt vilken miljö som används
+5. **LoadBalancer-stöd** - MetalLB för Kind-kluster
+6. **Nätverksrouting** - Automatisk routing mellan Docker och K8s
 
 ## Environment-variabler
 
@@ -215,6 +265,18 @@ kubectl get svc kamailio-nodeport -n kamailio
 
 # Testa anslutning
 nc -zu 172.18.0.2 30600
+```
+
+### LoadBalancer problem
+```bash
+# Kontrollera MetalLB
+kubectl get pods -n metallb-system
+
+# Kontrollera LoadBalancer services
+kubectl get svc -n kamailio
+
+# Testa LoadBalancer-anslutning
+nc -zu 172.18.0.242 5060
 ```
 
 ### Produktionskluster problem

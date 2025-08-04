@@ -7,7 +7,7 @@ data:
   kamailio.cfg: |
     #!KAMAILIO
     # Kamailio SIP Server Configuration
-    # Enhanced configuration for SIP testing
+    # Enhanced configuration for SIP testing with proper response handling
     
     ####### Global Parameters #########
     debug=2
@@ -25,7 +25,6 @@ data:
     listen=tcp:0.0.0.0:5060
     
     /* core modules */
-    loadmodule "tm.so"
     loadmodule "sl.so"
     loadmodule "xlog.so"
     

@@ -7,12 +7,14 @@ Innehåller klasser och funktioner som används av testerna
 import pytest
 import time
 import subprocess
-from typing import Dict, Any
+import json
+import os
+from typing import Dict, Any, Optional, Tuple
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / "sipp-tester"))
 from sipp_support import SippTester
-from sip_test_utils import get_environment_status
+from sip_test_utils import get_environment_status, NetworkUtils
 
 
 class TestEnvironmentSupport:
@@ -50,6 +52,216 @@ class TestEnvironmentSupport:
             'port': port,
             'environment': sipp_tester.environment
         }
+
+
+class MetalLBSupport:
+    """Support-klass för MetalLB-tester"""
+    
+    @staticmethod
+    def check_metallb_installed() -> bool:
+        """Kontrollera om MetalLB är installerat"""
+        try:
+            result = subprocess.run(
+                ["kubectl", "get", "namespace", "metallb-system"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return result.returncode == 0
+        except:
+            return False
+    
+    @staticmethod
+    def install_metallb() -> bool:
+        """Installera MetalLB"""
+        try:
+            print("🔧 Installerar MetalLB...")
+            
+            # Installera MetalLB
+            install_result = subprocess.run(
+                ["kubectl", "apply", "-f", "https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml"],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            
+            if install_result.returncode != 0:
+                print(f"❌ Kunde inte installera MetalLB: {install_result.stderr}")
+                return False
+            
+            print("⏳ Väntar på att MetalLB pods ska starta...")
+            time.sleep(30)
+            
+            # Kontrollera att pods startade
+            wait_result = subprocess.run(
+                ["kubectl", "wait", "--namespace", "metallb-system", "--for=condition=ready", "pod", "--selector=app=metallb", "--timeout=90s"],
+                capture_output=True,
+                text=True,
+                timeout=100
+            )
+            
+            if wait_result.returncode == 0:
+                print("✅ MetalLB installerat och redo")
+                return True
+            else:
+                print("❌ MetalLB pods startade inte inom tidsgränsen")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Kunde inte installera MetalLB: {e}")
+            return False
+    
+    @staticmethod
+    def check_metallb_config() -> bool:
+        """Kontrollera om MetalLB-konfiguration finns"""
+        try:
+            # Kontrollera om IPAddressPool finns
+            result = subprocess.run(
+                ["kubectl", "get", "ipaddresspool", "first-pool", "-n", "metallb-system"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode != 0:
+                return False
+            
+            # Kontrollera om L2Advertisement finns
+            l2_result = subprocess.run(
+                ["kubectl", "get", "l2advertisement", "example", "-n", "metallb-system"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            return l2_result.returncode == 0
+                
+        except Exception:
+            return False
+    
+    @staticmethod
+    def create_metallb_config() -> bool:
+        """Skapa MetalLB-konfiguration"""
+        try:
+            print("🔧 Skapar MetalLB-konfiguration...")
+            
+            # Kontrollera om konfigurationsfil finns
+            config_file = "../k8s/metallb-config.yaml"
+            if not os.path.exists(config_file):
+                print(f"❌ MetalLB-konfigurationsfil finns inte: {config_file}")
+                return False
+            
+            # Applicera konfiguration
+            apply_result = subprocess.run(
+                ["kubectl", "apply", "-f", config_file],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if apply_result.returncode == 0:
+                print("✅ MetalLB-konfiguration skapad")
+                return True
+            else:
+                print(f"❌ Kunde inte skapa MetalLB-konfiguration: {apply_result.stderr}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Kunde inte skapa MetalLB-konfiguration: {e}")
+            return False
+
+
+class LoadBalancerSupport:
+    """Support-klass för LoadBalancer-tester"""
+    
+    @staticmethod
+    def get_loadbalancer_services() -> list:
+        """Hämta alla LoadBalancer services"""
+        try:
+            result = subprocess.run(
+                ["kubectl", "get", "svc", "-n", "kamailio", "-o", "json"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                services_data = json.loads(result.stdout)
+                services = services_data.get("items", [])
+                
+                loadbalancer_services = []
+                for service in services:
+                    spec = service.get("spec", {})
+                    service_type = spec.get("type")
+                    if service_type == "LoadBalancer":
+                        service_name = service["metadata"]["name"]
+                        loadbalancer_services.append(service_name)
+                
+                return loadbalancer_services
+            
+            return []
+                
+        except Exception:
+            return []
+    
+    @staticmethod
+    def get_loadbalancer_ip(service_name: str) -> Optional[str]:
+        """Hämta extern IP för LoadBalancer service"""
+        try:
+            ip_result = subprocess.run(
+                ["kubectl", "get", "svc", service_name, "-n", "kamailio", "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if ip_result.returncode == 0 and ip_result.stdout.strip():
+                return ip_result.stdout.strip()
+            
+            return None
+                
+        except Exception:
+            return None
+    
+    @staticmethod
+    def get_loadbalancer_port(service_name: str) -> Optional[int]:
+        """Hämta port för LoadBalancer service"""
+        try:
+            port_result = subprocess.run(
+                ["kubectl", "get", "svc", service_name, "-n", "kamailio", "-o", "jsonpath={.spec.ports[0].port}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if port_result.returncode == 0 and port_result.stdout.strip():
+                return int(port_result.stdout.strip())
+            
+            return None
+                
+        except Exception:
+            return None
+    
+    @staticmethod
+    def test_loadbalancer_connectivity(service_name: str) -> Tuple[bool, str]:
+        """Testa anslutning till LoadBalancer"""
+        try:
+            external_ip = LoadBalancerSupport.get_loadbalancer_ip(service_name)
+            port = LoadBalancerSupport.get_loadbalancer_port(service_name)
+            
+            if not external_ip or not port:
+                return False, f"Kunde inte hämta IP eller port för {service_name}"
+            
+            print(f"🔍 Testar anslutning till LoadBalancer {service_name}: {external_ip}:{port}")
+            
+            # Testa UDP-anslutning
+            if NetworkUtils.test_udp_connection(external_ip, port):
+                return True, f"✅ LoadBalancer {service_name} tillgänglig via UDP: {external_ip}:{port}"
+            else:
+                return False, f"❌ LoadBalancer {service_name} inte tillgänglig via UDP: {external_ip}:{port}"
+                
+        except Exception as e:
+            return False, f"❌ Kunde inte testa LoadBalancer-anslutning: {e}"
 
 
 class SippTestSupport:

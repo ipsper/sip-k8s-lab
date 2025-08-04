@@ -515,9 +515,9 @@ def get_kamailio_config_from_environment() -> dict:
     
     # Standard-värden för olika miljöer
     default_configs = {
-        "local": {"host": "localhost", "port": 30600},  # Kind NodePort
+        "local": {"host": "172.18.0.2", "port": 30600},  # Kind NodePort
         "prod": {"host": "kamailio-service", "port": 5060},  # Kubernetes service
-        "test": {"host": "localhost", "port": 5061},  # Test port
+        "test": {"host": "172.18.0.2", "port": 5061},  # Test port
     }
     
     # Hämta från miljövariabler

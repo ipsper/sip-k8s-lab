@@ -19,7 +19,9 @@ from sip_test_utils import (
     KamailioConfig, KubernetesUtils, DockerUtils, NetworkUtils, 
     EnvironmentChecker, KamailioUtils, get_environment_status, is_environment_ready
 )
-from test_support import TestEnvironmentSupport
+from test_support import (
+    TestEnvironmentSupport, MetalLBSupport, LoadBalancerSupport, SippTestSupport
+)
 
 
 class TestEnvironment:
@@ -193,6 +195,62 @@ class TestEnvironment:
             print("✅ Kamailio service finns")
         else:
             pytest.fail("Kamailio service finns inte")
+    
+    def test_metallb_installed(self):
+        """Testa att MetalLB är installerat för LoadBalancer-stöd"""
+        if MetalLBSupport.check_metallb_installed():
+            print("✅ MetalLB installerat")
+            return
+        
+        # Om MetalLB inte är installerat, installera det
+        if MetalLBSupport.install_metallb():
+            print("✅ MetalLB installerat och redo")
+        else:
+            pytest.skip("Kunde inte installera MetalLB")
+    
+    def test_metallb_config_exists(self):
+        """Testa att MetalLB-konfiguration finns"""
+        if MetalLBSupport.check_metallb_config():
+            print("✅ MetalLB-konfiguration finns")
+            return
+        
+        # Om konfiguration saknas, skapa den
+        if MetalLBSupport.create_metallb_config():
+            print("✅ MetalLB-konfiguration skapad")
+        else:
+            pytest.skip("Kunde inte skapa MetalLB-konfiguration")
+    
+    def test_loadbalancer_service_exists(self):
+        """Testa att LoadBalancer service finns för Kamailio"""
+        loadbalancer_services = LoadBalancerSupport.get_loadbalancer_services()
+        
+        if loadbalancer_services:
+            print(f"✅ LoadBalancer services finns: {', '.join(loadbalancer_services)}")
+            
+            # Kontrollera om någon har extern IP
+            for service_name in loadbalancer_services:
+                external_ip = LoadBalancerSupport.get_loadbalancer_ip(service_name)
+                if external_ip:
+                    print(f"✅ LoadBalancer {service_name} har extern IP: {external_ip}")
+                    return
+            
+            print("⚠️  LoadBalancer services finns men ingen har extern IP än")
+        else:
+            print("⚠️  Inga LoadBalancer services hittades")
+        
+        pytest.skip("LoadBalancer service med extern IP saknas")
+    
+    def test_loadbalancer_connectivity(self):
+        """Testa anslutning till LoadBalancer"""
+        loadbalancer_services = LoadBalancerSupport.get_loadbalancer_services()
+        
+        for service_name in loadbalancer_services:
+            success, _ = LoadBalancerSupport.test_loadbalancer_connectivity(service_name)
+            if success:
+                print(f"✅ LoadBalancer {service_name} tillgänglig via anslutning")
+                return
+        
+        pytest.skip("Ingen tillgänglig LoadBalancer hittades")
     
     def test_kamailio_port_accessible(self, kamailio_config):
         """Testa att Kamailio port är tillgänglig"""
@@ -399,6 +457,10 @@ CMD ["/app/test-scripts/run-tests.sh"]
             ("Kamailio Deployment", lambda: KubernetesUtils.check_deployment_exists("kamailio", "kamailio")),
             ("Kamailio Pods", lambda: KubernetesUtils.check_pods_running("kamailio", "app=kamailio")),
             ("Kamailio Service", lambda: KubernetesUtils.check_service_exists("kamailio-service", "kamailio")),
+            ("MetalLB Installation", lambda: MetalLBSupport.check_metallb_installed()),
+            ("MetalLB Configuration", lambda: MetalLBSupport.check_metallb_config()),
+            ("LoadBalancer Service", lambda: len(LoadBalancerSupport.get_loadbalancer_services()) > 0),
+            ("LoadBalancer Connectivity", lambda: self._check_loadbalancer_connectivity()),
             ("SIPp Installation", lambda: EnvironmentChecker.check_sipp_installed()),
         ]
         
@@ -427,4 +489,14 @@ CMD ["/app/test-scripts/run-tests.sh"]
             print(f"⚠️  {successful}/{total} miljökontroller lyckades")
             print("Fix the failed checks before running SIPp tests")
     
-# Använd utility-funktionerna från sip_test_utils istället för lokala funktioner 
+    def _check_loadbalancer_connectivity(self):
+        """Hjälpfunktion för att kontrollera LoadBalancer-anslutning"""
+        try:
+            loadbalancer_services = LoadBalancerSupport.get_loadbalancer_services()
+            for service_name in loadbalancer_services:
+                success, _ = LoadBalancerSupport.test_loadbalancer_connectivity(service_name)
+                if success:
+                    return True
+            return False
+        except:
+            return False 
