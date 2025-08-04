@@ -127,7 +127,7 @@ class SippTester:
         try:
             # Testa LoadBalancer service
             result = subprocess.run(
-                ["kubectl", "get", "svc", "kamailio-service", "-n", "kamailio", "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"],
+                ["kubectl", "get", "svc", "kamailio-loadbalancer", "-n", "kamailio", "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"],
                 capture_output=True,
                 text=True,
                 timeout=10
@@ -147,7 +147,7 @@ class SippTester:
         """Auto-detektera bästa host baserat på miljö"""
         # Testa olika alternativ i prioritetsordning
         
-        # 1. Testa Kind NodePort service (bästa för UDP)
+        # 1. Testa Kind NodePort service (bästa för Kind-kluster)
         try:
             kind_ip = self._get_kind_worker_ip()
             if kind_ip and self._test_connection(kind_ip, 30600):
@@ -156,7 +156,24 @@ class SippTester:
         except Exception as e:
             logger.debug(f"Kunde inte använda Kind NodePort service: {e}")
         
-        # 2. Fallback till Kind worker node IP
+        # 2. Testa LoadBalancer service (fallback)
+        try:
+            result = subprocess.run(
+                ["kubectl", "get", "svc", "kamailio-loadbalancer", "-n", "kamailio", "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                lb_ip = result.stdout.strip()
+                if self._test_connection(lb_ip, 5060):
+                    logger.info(f"Använder LoadBalancer IP: {lb_ip}:5060")
+                    return f"{lb_ip}:5060"
+        except Exception as e:
+            logger.debug(f"Kunde inte använda LoadBalancer service: {e}")
+        
+        # 3. Fallback till Kind worker node IP
+        kind_ip = self._get_kind_worker_ip()
         logger.warning("Kunde inte detektera Kamailio host, använder Kind worker node IP")
         return kind_ip
     
@@ -270,7 +287,8 @@ class SippTester:
         
         # Använd den faktiska IP-adressen från KAMAILIO_HOST
         
-        test_command = f"nc -z -w 5 {host_ip} {host_port}"
+        # Använd UDP för SIP (nc -zu)
+        test_command = f"nc -zu -w 5 {host_ip} {host_port}"
         
         logger.info(f"🔍 Testar anslutning till {host_ip}:{host_port}")
         logger.info(f"🔍 Test command: {test_command}")
@@ -338,8 +356,8 @@ class SippTester:
         # Bestäm Kamailio host
         kamailio_host = self._detect_kamailio_host()
         
-        # SIPp-kommando med lokal port 5064 för att undvika konflikter
-        sipp_command = f"sipp -sf /app/sipp-scenarios/{scenario}.xml {kamailio_host} -p 5064 -d 1000 -m 1 -r 1"
+        # SIPp-kommando med lokal port 5065 för att undvika konflikter
+        sipp_command = f"sipp -sf /app/sipp-scenarios/{scenario}.xml {kamailio_host} -p 5065 -d 1000 -m 1 -r 1"
         
         logger.info(f"Kör SIPp-test: {scenario}")
         logger.info(f"Target: {kamailio_host}")
@@ -349,7 +367,7 @@ class SippTester:
             # Försök köra SIPp från host först (för Kind-kluster)
             if "172.18." in kamailio_host:
                 logger.info("Försöker köra SIPp från host för Kind-kluster")
-                host_sipp_command = f"sipp -sf {self.base_path}/../sipp-tester/sipp-scenarios/{scenario}.xml {kamailio_host} -p 5064 -d 1000 -m 1 -r 1"
+                host_sipp_command = f"sipp -sf {self.base_path}/../sipp-tester/sipp-scenarios/{scenario}.xml {kamailio_host} -p 5065 -d 1000 -m 1 -r 1"
                 
                 try:
                     result = subprocess.run(

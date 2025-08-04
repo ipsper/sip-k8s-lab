@@ -434,7 +434,7 @@ def get_environment_status() -> Dict[str, bool]:
         status["kamailio_pods"] = False
     
     try:
-        status["kamailio_service"] = KubernetesUtils.check_service_exists("kamailio-service", "kamailio")
+        status["kamailio_service"] = KubernetesUtils.check_service_exists("kamailio-loadbalancer", "kamailio")
     except Exception:
         status["kamailio_service"] = False
     

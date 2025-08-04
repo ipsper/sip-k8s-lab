@@ -283,7 +283,8 @@ class SippTestSupport:
         env_status = get_environment_status()
         
         # Kontrollera kritiska komponenter för SIPp-tester
-        critical_checks = ["docker", "sipp_image", "sipp_container", "sipp_installed", "sipp_scenarios"]
+        # Ändra från "sipp_installed" till "sipp_container" eftersom SIPp är i Docker
+        critical_checks = ["docker", "sipp_image", "sipp_container", "sipp_scenarios"]
         missing_critical = [check for check in critical_checks if not env_status.get(check, False)]
         
         if missing_critical:
@@ -360,3 +361,187 @@ class SippTestSupport:
             timeout=30,
             environment=environment
         ) 
+
+
+class NetworkRoutingSupport:
+    """Support för nätverksrouting-tester"""
+    
+    @staticmethod
+    def test_loadbalancer_connectivity() -> Tuple[bool, str]:
+        """Testa LoadBalancer-anslutning"""
+        try:
+            # Testa UDP-anslutning till LoadBalancer
+            result = subprocess.run(
+                ["nc", "-zu", "172.18.0.242", "5060"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return True, "LoadBalancer UDP-anslutning fungerar"
+            else:
+                return False, f"LoadBalancer UDP-anslutning misslyckades: {result.stderr}"
+        except Exception as e:
+            return False, f"LoadBalancer-test fel: {str(e)}"
+    
+    @staticmethod
+    def test_nodeport_connectivity() -> Tuple[bool, str]:
+        """Testa NodePort-anslutning"""
+        try:
+            # Testa UDP-anslutning till NodePort
+            result = subprocess.run(
+                ["nc", "-zu", "172.18.0.2", "30600"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return True, "NodePort UDP-anslutning fungerar"
+            else:
+                return False, f"NodePort UDP-anslutning misslyckades: {result.stderr}"
+        except Exception as e:
+            return False, f"NodePort-test fel: {str(e)}"
+    
+    @staticmethod
+    def test_kamailio_pod_connectivity() -> Tuple[bool, str]:
+        """Testa direkt anslutning till Kamailio-pods"""
+        try:
+            # Hämta pod-IP:er
+            result = subprocess.run(
+                ["kubectl", "get", "pods", "-n", "kamailio", "-o", "jsonpath={.items[*].status.podIP}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                return False, "Kunde inte hämta pod-IP:er"
+            
+            pod_ips = result.stdout.strip().split()
+            if not pod_ips:
+                return False, "Inga Kamailio-pods hittades"
+            
+            # Testa anslutning till första pod
+            test_ip = pod_ips[0]
+            result = subprocess.run(
+                ["nc", "-zu", test_ip, "5060"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return True, f"Pod-anslutning fungerar till {test_ip}"
+            else:
+                return False, f"Pod-anslutning misslyckades till {test_ip}: {result.stderr}"
+        except Exception as e:
+            return False, f"Pod-connectivity test fel: {str(e)}"
+    
+    @staticmethod
+    def test_sipp_to_kamailio_routing() -> Tuple[bool, str]:
+        """Testa routing från SIPp till Kamailio"""
+        try:
+            # Skicka SIP OPTIONS via NodePort (bättre för Kind-kluster)
+            sip_message = (
+                "OPTIONS sip:kamailio.local SIP/2.0\r\n"
+                "Via: SIP/2.0/UDP 172.18.0.2:30600\r\n"
+                "From: <sip:test@kamailio.local>\r\n"
+                "To: <sip:kamailio.local>\r\n"
+                "Call-ID: test-123\r\n"
+                "CSeq: 1 OPTIONS\r\n"
+                "Contact: <sip:test@172.18.0.2:30600>\r\n"
+                "Content-Length: 0\r\n\r\n"
+            )
+            
+            # Skicka meddelande med timeout
+            process = subprocess.Popen(
+                ["nc", "-u", "172.18.0.2", "30600"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            try:
+                stdout, stderr = process.communicate(input=sip_message, timeout=3)
+                if process.returncode == 0:
+                    return True, "SIP-meddelande skickades framgångsrikt via NodePort"
+                else:
+                    return False, f"SIP-meddelande misslyckades: {stderr}"
+            except subprocess.TimeoutExpired:
+                process.kill()
+                return False, "SIP-meddelande timeout - ingen respons"
+                
+        except Exception as e:
+            return False, f"SIP-routing test fel: {str(e)}"
+    
+    @staticmethod
+    def get_network_status() -> Dict[str, bool]:
+        """Hämta nätverksstatus för alla komponenter"""
+        status = {}
+        
+        # Testa LoadBalancer
+        success, msg = NetworkRoutingSupport.test_loadbalancer_connectivity()
+        status["loadbalancer_connectivity"] = success
+        
+        # Testa NodePort
+        success, msg = NetworkRoutingSupport.test_nodeport_connectivity()
+        status["nodeport_connectivity"] = success
+        
+        # Testa Pod-connectivity
+        success, msg = NetworkRoutingSupport.test_kamailio_pod_connectivity()
+        status["pod_connectivity"] = success
+        
+        # Testa SIP-routing
+        success, msg = NetworkRoutingSupport.test_sipp_to_kamailio_routing()
+        status["sip_routing"] = success
+        
+        return status 
+
+    @staticmethod
+    def fix_loadbalancer_routing() -> Tuple[bool, str]:
+        """Försök fixa LoadBalancer-routing-problemet"""
+        try:
+            # Kontrollera om LoadBalancer har rätt endpoints
+            result = subprocess.run(
+                ["kubectl", "get", "endpoints", "kamailio-loadbalancer", "-n", "kamailio", "-o", "jsonpath={.subsets[0].addresses[*].ip}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode != 0 or not result.stdout.strip():
+                return False, "LoadBalancer har inga endpoints"
+            
+            # Kontrollera om pods körs
+            result = subprocess.run(
+                ["kubectl", "get", "pods", "-n", "kamailio", "-l", "app=kamailio", "--field-selector=status.phase=Running", "-o", "jsonpath={.items[*].status.podIP}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode != 0 or not result.stdout.strip():
+                return False, "Inga Kamailio-pods körs"
+            
+            # Försök restarta LoadBalancer service
+            result = subprocess.run(
+                ["kubectl", "delete", "svc", "kamailio-loadbalancer", "-n", "kamailio"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            # Skapa service igen
+            result = subprocess.run(
+                ["kubectl", "apply", "-f", "../k8s/service.yaml"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                return True, "LoadBalancer service restarted"
+            else:
+                return False, f"Kunde inte restarta LoadBalancer: {result.stderr}"
+                
+        except Exception as e:
+            return False, f"LoadBalancer fix fel: {str(e)}" 

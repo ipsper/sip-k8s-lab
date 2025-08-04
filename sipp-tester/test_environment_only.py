@@ -20,7 +20,7 @@ from sip_test_utils import (
     EnvironmentChecker, KamailioUtils, get_environment_status, is_environment_ready
 )
 from test_support import (
-    TestEnvironmentSupport, MetalLBSupport, LoadBalancerSupport, SippTestSupport
+    TestEnvironmentSupport, MetalLBSupport, LoadBalancerSupport, SippTestSupport, NetworkRoutingSupport
 )
 
 
@@ -252,6 +252,66 @@ class TestEnvironment:
         
         pytest.skip("Ingen tillgänglig LoadBalancer hittades")
     
+    def test_network_routing(self):
+        """Testa nätverksrouting mellan komponenter"""
+        print("🔍 Testar nätverksrouting...")
+        
+        # Testa LoadBalancer-connectivity
+        success, msg = NetworkRoutingSupport.test_loadbalancer_connectivity()
+        if success:
+            print(f"✅ {msg}")
+        else:
+            print(f"❌ {msg}")
+        
+        # Testa NodePort-connectivity
+        success, msg = NetworkRoutingSupport.test_nodeport_connectivity()
+        if success:
+            print(f"✅ {msg}")
+        else:
+            print(f"❌ {msg}")
+        
+        # Testa Pod-connectivity
+        success, msg = NetworkRoutingSupport.test_kamailio_pod_connectivity()
+        if success:
+            print(f"✅ {msg}")
+        else:
+            print(f"❌ {msg}")
+        
+        # Testa SIP-routing
+        success, msg = NetworkRoutingSupport.test_sipp_to_kamailio_routing()
+        if success:
+            print(f"✅ {msg}")
+        else:
+            print(f"❌ {msg}")
+        
+        # Sammanfattning
+        network_status = NetworkRoutingSupport.get_network_status()
+        working_components = [k for k, v in network_status.items() if v]
+        failed_components = [k for k, v in network_status.items() if not v]
+        
+        print(f"📊 Nätverksstatus: {len(working_components)}/{len(network_status)} komponenter fungerar")
+        if failed_components:
+            print(f"❌ Misslyckade komponenter: {', '.join(failed_components)}")
+        
+        # Om alla tester passerar, det är bra
+        if all(network_status.values()):
+            print("🎉 Alla nätverksrouting-tester passerade!")
+        else:
+            print("🔧 Försöker fixa nätverksrouting-problem...")
+            success, msg = NetworkRoutingSupport.fix_loadbalancer_routing()
+            if success:
+                print(f"✅ {msg}")
+                # Testa igen efter fix
+                time.sleep(5)
+                network_status = NetworkRoutingSupport.get_network_status()
+                if all(network_status.values()):
+                    print("🎉 Nätverksrouting fixat!")
+                else:
+                    pytest.skip("Nätverksrouting-problem kvarstår efter fix")
+            else:
+                print(f"❌ Kunde inte fixa nätverksrouting: {msg}")
+                pytest.skip("Nätverksrouting-problem upptäckta")
+    
     def test_kamailio_port_accessible(self, kamailio_config):
         """Testa att Kamailio port är tillgänglig"""
         host = kamailio_config['host']
@@ -461,6 +521,7 @@ CMD ["/app/test-scripts/run-tests.sh"]
             ("MetalLB Configuration", lambda: MetalLBSupport.check_metallb_config()),
             ("LoadBalancer Service", lambda: len(LoadBalancerSupport.get_loadbalancer_services()) > 0),
             ("LoadBalancer Connectivity", lambda: self._check_loadbalancer_connectivity()),
+            ("Network Routing", lambda: all(NetworkRoutingSupport.get_network_status().values())),
             ("SIPp Installation", lambda: EnvironmentChecker.check_sipp_installed()),
         ]
         

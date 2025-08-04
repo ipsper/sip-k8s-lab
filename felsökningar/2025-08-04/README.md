@@ -1,158 +1,106 @@
-# Felsökning 2025-08-04: Nätverksrouting mellan Docker och Kubernetes
+# Felsökning 2025-08-04: Nätverksrouting och NodePort vs LoadBalancer
 
-## 🎯 Problembeskrivning
+## Problembeskrivning
+SIPp-tester misslyckas med "Failed call" och "0 Successful call" trots att Kamailio är igång och nätverksanslutningar fungerar.
 
-**Huvudproblem:** SIPp-tester misslyckades eftersom SIPp inte kunde nå Kamailio
-- SIPp kör i Docker på `172.18.0.2`
-- Kamailio kör i K8s på `10.244.2.15`
-- Ingen direkt routing mellan Docker-nätverket och K8s-nätverket
+## Diagnostik
 
-## 🔍 Rotorsak identifierad
+### 1. Nätverksrouting-problem identifierade
+- **LoadBalancer UDP-anslutning**: ✅ Fungerar (`nc -zu 172.18.0.242 5060`)
+- **NodePort UDP-anslutning**: ✅ Fungerar (`nc -zu 172.18.0.2 30600`)
+- **Pod-anslutning**: ✅ Fungerar (`nc -zu 10.244.2.23 5060`)
+- **SIP-routing**: ❌ Timeout - ingen respons
 
-**Nätverksrouting-problem:**
-```
-SIPp (Docker) 172.18.0.2 → Kamailio (K8s) 10.244.2.15
-```
-
-### Vad som inte fungerade:
-1. **NodePort (172.18.0.2:30600):** SIPp kunde ansluta men traffic når inte Kamailio
-2. **Port-forward:** Fungerade lokalt men inte för Docker-containrar
-3. **Direkt pod IP:** Kunde inte nås från Docker-nätverket
-
-## ✅ Lösning implementerad
-
-### 1. MetalLB LoadBalancer
+### 2. SIPp-testresultat
 ```bash
-# Installera MetalLB för Kind
-kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+# LoadBalancer test
+docker run --rm --network=host local/sipp-tester:latest bash -c "sipp -sf /app/sipp-scenarios/options.xml 172.18.0.242:5060 -p 5068 -d 1000 -m 1 -r 1 -timeout 10"
+# Resultat: 0 Successful call, 1 Failed call
 
-# Konfigurera IP-pool
-kubectl apply -f k8s/metallb-config.yaml
+# NodePort test  
+docker run --rm --network=host local/sipp-tester:latest bash -c "sipp -sf /app/sipp-scenarios/options.xml 172.18.0.2:30600 -p 5069 -d 1000 -m 1 -r 1 -timeout 10"
+# Resultat: 0 Successful call, 1 Failed call
 ```
 
-### 2. LoadBalancer Service
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: kamailio-loadbalancer
-  namespace: kamailio
-spec:
-  type: LoadBalancer
-  selector:
-    app: kamailio
-  ports:
-    - name: sip-udp
-      protocol: UDP
-      port: 5060
-      targetPort: 5060
-```
+### 3. Kamailio-loggar
+Inga "Received SIP request" loggar visas i Kamailio, vilket betyder att SIP-meddelanden inte når Kamailio-pods.
 
-### 3. Resultat
-- **LoadBalancer IP:** `172.18.0.242:5060`
-- **Nätverksrouting:** ✅ Fungerar
-- **SIPp kan nå Kamailio:** ✅ Via LoadBalancer
-
-## 🔧 Tekniska detaljer
-
-### Nätverksarkitektur före:
-```
-SIPp (Docker) 172.18.0.2
-    ↓ (ingen routing)
-Kamailio (K8s) 10.244.2.15
-```
-
-### Nätverksarkitektur efter:
-```
-SIPp (Docker) 172.18.0.2
-    ↓ (via LoadBalancer)
-LoadBalancer 172.18.0.242:5060
-    ↓ (K8s routing)
-Kamailio (K8s) 10.244.2.15:5060
-```
-
-### MetalLB-konfiguration:
-```yaml
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: first-pool
-  namespace: metallb-system
-spec:
-  addresses:
-  - 172.18.0.240-172.18.0.250
-```
-
-## 🧪 Tester utförda
-
-### 1. Nätverksanslutning
+### 4. Manuella nätverkstester
 ```bash
-# Testa LoadBalancer
-nc -zu 172.18.0.242 5060
-# ✅ Fungerar
+# Test från host till NodePort
+echo -e "OPTIONS sip:kamailio.local SIP/2.0\r\n..." | nc -u 172.18.0.2 30600
+# Resultat: Hänger (väntar på svar som aldrig kommer)
 
-# Testa NodePort
-nc -zu 172.18.0.2 30600
-# ✅ Fungerar
-```
-
-### 2. SIPp-tester
-```bash
-# Testa med LoadBalancer
-docker run --rm -v $(pwd)/sipp-scenarios:/scenarios \
-  local/sipp-tester:latest sipp 172.18.0.242:5060 \
-  -sf /scenarios/options.xml -p 5062 -m 1 -timeout 5s
-```
-
-### 3. Manuella SIP-requests
-```bash
-# Testa direkt till LoadBalancer
+# Test från host till LoadBalancer  
 echo -e "OPTIONS sip:kamailio.local SIP/2.0\r\n..." | nc -u 172.18.0.242 5060
+# Resultat: Hänger (väntar på svar som aldrig kommer)
+
+# Test från host direkt till pod
+echo -e "OPTIONS sip:kamailio.local SIP/2.0\r\n..." | nc -u 10.244.1.14 5060
+# Resultat: Hänger (väntar på svar som aldrig kommer)
 ```
 
-## 📊 Resultat
+## Rotorsak
+**Nätverksrouting-problem i Kind-kluster**: Trots att grundläggande UDP-anslutningar fungerar (`nc -zu`), når SIP-meddelanden inte Kamailio-pods. Detta indikerar ett djupare problem med UDP-routing i Kind/MetalLB.
 
-### ✅ Vad som fungerar:
-1. **LoadBalancer skapad:** `172.18.0.242:5060`
-2. **MetalLB installerat:** För Kind-kluster
-3. **Nätverksrouting:** SIPp kan nå Kamailio via LoadBalancer
-4. **Anslutning:** UDP-anslutning fungerar
+## Lösningsförsök
 
-### 🔍 Vad som fortfarande inte fungerar:
-**Kamailio tar inte emot requests** - detta verkar vara ett problem med Kamailio-konfigurationen, inte nätverket.
+### 1. Uppdaterat SIPp-support för NodePort-prioritet
+```python
+# app/sipp_support.py - _detect_auto_host()
+# Ändrat prioritet från LoadBalancer -> NodePort -> Fallback
+# till NodePort -> LoadBalancer -> Fallback
+```
 
-## 🚀 Nästa steg
+### 2. Uppdaterat nätverkstester
+```python
+# app/test_support.py - NetworkRoutingSupport
+# test_sipp_to_kamailio_routing() nu använder NodePort (172.18.0.2:30600)
+```
 
-### Prioriterade uppgifter:
-1. **Debugga Kamailio-konfigurationen** - varför tar den inte emot requests?
-2. **Testa med enklare Kamailio-konfiguration** - bara loggning utan svar
-3. **Kontrollera SIPp-scenariot** - är SIP-messaget korrekt formaterat?
+### 3. Kamailio-konfiguration kontrollerad
+```yaml
+# k8s/configmap.yaml
+listen=udp:0.0.0.0:5060
+listen=tcp:0.0.0.0:5060
+# Konfiguration ser korrekt ut
+```
 
-### Långsiktiga förbättringar:
-1. **Automatisera LoadBalancer-setup** i deployment-script
-2. **Dokumentera nätverksarkitektur** för framtida referens
-3. **Skapa monitoring** för LoadBalancer-trafik
+## Slutsats
+Problemet är **inte** Kamailio-konfigurationen eller SIPp-inställningarna, utan ett **nätverksrouting-problem i Kind-kluster**. 
 
-## 📝 Lärdomar
+### Rekommenderad lösning
+1. **Använd NodePort istället för LoadBalancer** för SIPp-tester i Kind
+2. **Implementera port-forward** som alternativ till LoadBalancer/NodePort
+3. **Överväg Minikube** för bättre nätverksrouting om problemet kvarstår
 
-### Viktiga insikter:
-1. **Kind vs Minikube:** Kind använder Docker-nätverk, vilket skapar routing-problem
-2. **LoadBalancer vs NodePort:** LoadBalancer ger bättre routing för Docker-containrar
-3. **MetalLB:** Nödvändigt för LoadBalancer i Kind-kluster
+## Tekniska detaljer
 
-### Best practices:
-1. **Använd LoadBalancer** för Docker-till-K8s kommunikation
-2. **Installera MetalLB** i Kind-kluster
-3. **Testa nätverksanslutning** innan SIPp-tester
+### Kubernetes Services
+```bash
+# NodePort service
+kubectl get svc -n kamailio kamailio-nodeport
+# Ports: 30600/UDP, 30601/TCP -> 5060
 
-## 🔗 Relaterade filer
+# LoadBalancer service  
+kubectl get svc -n kamailio kamailio-loadbalancer
+# IP: 172.18.0.242:5060
+```
 
-- `k8s/metallb-config.yaml` - MetalLB-konfiguration
-- `k8s/service.yaml` - LoadBalancer service
-- `sipp-tester/sipp-scenarios/options.xml` - SIPp-testscenario
+### Pod-topologi
+```bash
+kubectl get pods -n kamailio -o wide
+# kamailio-7fd7c67566-hb4rn: 10.244.2.23 (worker)
+# kamailio-7fd7c67566-vnmjp: 10.244.1.14 (worker2)
+```
 
----
+### Endpoints
+```bash
+kubectl get endpoints -n kamailio kamailio-nodeport
+# 10.244.1.14:5060, 10.244.2.23:5060
+```
 
-**Datum:** 2025-08-04  
-**Status:** Nätverksrouting löst, Kamailio-konfiguration kvar  
-**Nästa:** Debugga Kamailio-konfiguration 
+## Nästa steg
+1. Implementera port-forward som fallback
+2. Testa med Minikube för jämförelse
+3. Dokumentera lösning i README 

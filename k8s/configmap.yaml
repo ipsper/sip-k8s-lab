@@ -25,15 +25,18 @@ data:
     listen=tcp:0.0.0.0:5060
     
     /* core modules */
+    loadmodule "tm.so"
     loadmodule "sl.so"
     loadmodule "xlog.so"
+    loadmodule "rr.so"
+    loadmodule "pv.so"
     
     /* routing logic */
     request_route {
         # Log all requests
         xlog("L_INFO", "Received SIP request\n");
         
-        # Send 200 OK for all requests
+        # Handle all requests with proper SIP response
         sl_send_reply("200", "OK");
         exit;
     } 

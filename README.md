@@ -16,16 +16,38 @@ En lab server för sip i k8s
   - Docker image hantering
   - Test-scenarios
 
+### 🔧 Felsökningar och Troubleshooting
 - **[felsökningar/README.md](felsökningar/README.md)** - Index över felsökningar och troubleshooting
   - Struktur för felsökningar
   - Mall för nya felsökningar
   - Kommandon för att skapa nya felsökningar
 
-- **[felsökningar/2025-07-31/README.md](felsökningar/2025-07-31/README.md)** - Specifik felsökning för test_options_scenario timeout
-  - Problembeskrivning
-  - Rotorsaksanalys
-  - Lösning
-  - Lärdomar
+- **[felsökningar/2025-07-31/README.md](felsökningar/2025-07-31/README.md)** - Test timeout och Kamailio-konfiguration
+  - SIPp test_options_scenario timeout
+  - Kamailio-konfigurationsproblem
+  - Docker image och nätverksproblem
+
+- **[felsökningar/2025-08-04/README.md](felsökningar/2025-08-04/README.md)** - Nätverksrouting och NodePort vs LoadBalancer
+  - SIPp-tester misslyckas med "0 Successful call"
+  - Nätverksrouting-problem i Kind-kluster
+  - Diagnostik av UDP-routing
+  - Rekommenderade lösningar
+
+- **[felsökningar/2025-08-04/SAMMANFATTNING.md](felsökningar/2025-08-04/SAMMANFATTNING.md)** - Sammanfattning av 2025-08-04 felsökning
+  - Snabb översikt över problem och lösningar
+  - Status och nästa steg
+  - Tekniska detaljer
+
+- **[felsökningar/2025-08-04/README.md](felsökningar/2025-08-04/README.md)** - Nätverksrouting och NodePort vs LoadBalancer
+  - SIPp-tester misslyckas med "0 Successful call"
+  - Nätverksrouting-problem i Kind-kluster
+  - Diagnostik av UDP-routing
+  - Rekommenderade lösningar
+
+- **[felsökningar/2025-08-04/SAMMANFATTNING.md](felsökningar/2025-08-04/SAMMANFATTNING.md)** - Sammanfattning av 2025-08-04 felsökning
+  - Snabb översikt över problem och lösningar
+  - Status och nästa steg
+  - Tekniska detaljer
 
 ### 📁 Projektstruktur
 ```
